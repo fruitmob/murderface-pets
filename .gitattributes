@@ -1,0 +1,21 @@
+# Normalize line endings across platforms
+* text=auto eol=lf
+
+# Lua source
+*.lua text eol=lf
+
+# SQL
+*.sql text eol=lf
+
+# Markdown / docs
+*.md text eol=lf
+
+# Config
+*.cfg text eol=lf
+
+# Images are binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary

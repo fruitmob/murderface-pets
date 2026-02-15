@@ -1,0 +1,82 @@
+name: Bug Report
+description: Report a bug or unexpected behavior
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug! Please fill out the sections below so we can reproduce and fix it.
+
+  - type: input
+    id: version
+    attributes:
+      label: Script Version
+      description: Which commit or version are you running?
+      placeholder: e.g. v2.0.0, commit d161f40
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug.
+      placeholder: Tell us what went wrong...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: How can we trigger this bug?
+      placeholder: |
+        1. Buy a pet from the shop
+        2. Use the item from inventory
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: errors
+    attributes:
+      label: Server/client console errors
+      description: Paste any error output from the F8 console or server terminal.
+      render: text
+
+  - type: dropdown
+    id: framework
+    attributes:
+      label: Framework
+      options:
+        - Qbox (qbx_core)
+        - QBCore (qb-core)
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: ox_inventory_version
+    attributes:
+      label: ox_inventory version
+      placeholder: e.g. 2.42.3
+
+  - type: input
+    id: game_build
+    attributes:
+      label: Game build
+      placeholder: e.g. 3258
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Screenshots, config changes, addon models installed, etc.
