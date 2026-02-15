@@ -119,11 +119,19 @@ RegisterNetEvent('murderface-pets:client:spawnPet', function(modelName, hostileT
 
     whistleAnimation(plyPed, 1500)
 
-    if lib.progressBar({
+    if not lib.progressBar({
         duration = Config.callDuration * 1000,
         label = 'Calling companion',
         disable = { move = false, car = false, combat = false, mouse = false },
     }) then
+        -- Notify server so pendingSpawn flag is cleared
+        if item.metadata and item.metadata.hash then
+            TriggerServerEvent('murderface-pets:server:spawnCancelled', item.metadata.hash)
+        end
+        return
+    end
+
+    do
         ClearPedTasks(plyPed)
 
         local spawnCoord = getSpawnLocation(plyPed)
@@ -728,6 +736,17 @@ RegisterNetEvent('murderface-pets:client:customizePet', function(item, petInfo)
             type = petInfo.processType,
         },
     })
+end)
+
+-- ============================
+--     Stats Sync (food/thirst)
+-- ============================
+
+RegisterNetEvent('murderface-pets:client:syncStats', function(hash, stats)
+    local petData = ActivePed:findByHash(hash)
+    if not petData then return end
+    if stats.food ~= nil then petData.item.metadata.food = stats.food end
+    if stats.thirst ~= nil then petData.item.metadata.thirst = stats.thirst end
 end)
 
 -- ============================

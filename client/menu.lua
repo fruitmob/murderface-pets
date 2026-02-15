@@ -8,6 +8,7 @@ local alreadyHunting = { state = false }
 -- =======================================
 
 local supplyIcons = {
+    murderface_leash       = { icon = 'link',         iconColor = '#228be6', desc = 'Keep your pet on a leash' },
     murderface_food        = { icon = 'bowl-food',    iconColor = '#e8590c', desc = 'Restores 50 hunger' },
     murderface_firstaid    = { icon = 'kit-medical',  iconColor = '#e03131', desc = 'Heals 25% max HP or revives' },
     murderface_waterbottle = { icon = 'bottle-water', iconColor = '#228be6', desc = 'Refillable — holds 10 uses' },
@@ -300,11 +301,24 @@ local menu = {
             local species = activePed.petConfig and activePed.petConfig.species
             if not species then return false end
             for _, s in ipairs(Config.leash.speciesAllowed) do
-                if species == s then return true end
+                if species == s then
+                    -- Already leashed = always show (to allow removal)
+                    if IsLeashed(activePed.item.metadata.hash) then return true end
+                    -- Otherwise require leash item in inventory
+                    local count = exports.ox_inventory:Search('count', Config.items.leash.name)
+                    return count and count > 0
+                end
             end
             return false
         end,
         action = function(_, activePed)
+            if not IsLeashed(activePed.item.metadata.hash) then
+                local count = exports.ox_inventory:Search('count', Config.items.leash.name)
+                if not count or count < 1 then
+                    lib.notify({ description = 'You need a leash!', type = 'error', duration = 5000 })
+                    return false
+                end
+            end
             ToggleLeash(activePed)
             return true
         end,

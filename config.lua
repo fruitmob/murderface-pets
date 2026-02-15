@@ -769,6 +769,9 @@ Config.items = {
         name = 'murderface_doghouse',
         duration = 3,             -- seconds for placement progress bar
     },
+    leash = {
+        name = 'murderface_leash',
+    },
 }
 
 -- ========================================
@@ -863,6 +866,7 @@ Config.suppliesShop = {
         { name = 'murderface_waterbottle', label = 'Portable Water Bottle', price = 300 },
         { name = 'murderface_collar',      label = 'Pet Collar',            price = 250 },
         { name = 'murderface_nametag',     label = 'Name Tag',              price = 150 },
+        { name = 'murderface_leash',       label = 'Pet Leash',              price = 200 },
         { name = 'murderface_groomingkit', label = 'Grooming Kit',          price = 750 },
         { name = 'murderface_doghouse',   label = 'Dog House',             price = 5000 },
     },

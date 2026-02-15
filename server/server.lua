@@ -7,6 +7,7 @@
 
 local SAVE_INTERVAL = 5000
 local MAX_AGE = 60 * 60 * 24 * 10 -- 10 days of active time
+local pendingSpawns = {} -- { [src] = { [hash] = os.time() } } race-condition guard
 
 local function round(n, decimals)
     local mult = 10 ^ (decimals or 0)
@@ -173,10 +174,23 @@ function Pet:spawnPet(src, model, item)
         return
     end
 
-    -- Check spawn limit
+    -- Prevent double-spawn race condition (client hasn't registered yet)
+    if pendingSpawns[src] and pendingSpawns[src][hash] then
+        local elapsed = os.time() - pendingSpawns[src][hash]
+        if elapsed < 30 then return end
+        pendingSpawns[src][hash] = nil -- timed out, allow retry
+    end
+
+    -- Check spawn limit (registered + pending)
     local count = 0
     if self.players[src] then
         for _ in pairs(self.players[src]) do count = count + 1 end
+    end
+    if pendingSpawns[src] then
+        local now = os.time()
+        for _, t in pairs(pendingSpawns[src]) do
+            if now - t < 30 then count = count + 1 end
+        end
     end
     if count >= Config.maxActivePets then
         TriggerClientEvent('ox_lib:notify', src, {
@@ -199,6 +213,10 @@ function Pet:spawnPet(src, model, item)
         })
         return
     end
+
+    -- Mark as pending spawn (cleared on registerPet callback or 30s timeout)
+    pendingSpawns[src] = pendingSpawns[src] or {}
+    pendingSpawns[src][hash] = os.time()
 
     local isOwner = item.metadata.owner and item.metadata.owner.phone == player.PlayerData.charinfo.phone
     TriggerClientEvent('murderface-pets:client:spawnPet', src, model, not isOwner, item)
@@ -225,25 +243,34 @@ end
 ---@param src number Player source
 ---@param hash string Pet hash
 ---@param silent? boolean Suppress client events (used during disconnect)
-function Pet:saveData(src, hash, silent)
+---@param processStats? boolean Process food/thirst/regen ticks (decoupled from save frequency)
+function Pet:saveData(src, hash, silent, processStats)
     local petData = self:findByHash(src, hash)
     if not petData then return end
 
     -- Skip dead pets
     if petData.metadata.health <= 0 then return end
 
-    -- Process tick updates
-    if petData.metadata.health > 100 then
-        if petData.metadata.age < MAX_AGE then
-            petData.metadata.age = petData.metadata.age + math.floor(SAVE_INTERVAL / 1000)
-        end
-        Update.food(petData)
-        Update.thirst(petData)
-        Update.healthRegen(petData)
-    else
-        petData.metadata.health = 0
-        if not silent then
-            TriggerClientEvent('murderface-pets:client:forceKill', src, hash, 'hunger')
+    -- Process stat updates only on stat ticks (decoupled from save frequency)
+    if processStats then
+        if petData.metadata.health > 100 then
+            if petData.metadata.age < MAX_AGE then
+                petData.metadata.age = petData.metadata.age + Config.dataUpdateInterval
+            end
+            Update.food(petData)
+            Update.thirst(petData)
+            Update.healthRegen(petData)
+
+            -- Sync food/thirst to client so View Stats is accurate
+            TriggerClientEvent('murderface-pets:client:syncStats', src, hash, {
+                food = petData.metadata.food,
+                thirst = petData.metadata.thirst,
+            })
+        else
+            petData.metadata.health = 0
+            if not silent then
+                TriggerClientEvent('murderface-pets:client:forceKill', src, hash, 'hunger')
+            end
         end
     end
 
@@ -283,6 +310,7 @@ AddEventHandler('playerDropped', function()
     Pet:cleanup(src)
     ClearCooldown(src)
     ClearActivityCooldowns(src)
+    pendingSpawns[src] = nil
 end)
 
 -- ============================
@@ -292,6 +320,13 @@ end)
 RegisterNetEvent('murderface-pets:server:setAsDespawned', function(hash)
     if not hash then return end
     Pet:setAsDespawned(source, hash)
+end)
+
+RegisterNetEvent('murderface-pets:server:spawnCancelled', function(hash)
+    local src = source
+    if pendingSpawns[src] then
+        pendingSpawns[src][hash] = nil
+    end
 end)
 
 RegisterNetEvent('murderface-pets:server:despawnNotOwned', function(hash)
@@ -455,8 +490,14 @@ RegisterNetEvent('murderface-pets:server:feedPet', function(hash)
 
     petData.metadata.food = math.min(100, petData.metadata.food + Config.balance.food.feedAmount)
     Update.xpAward(src, petData, Config.xp.feeding)
+
+    -- Sync updated food to client
+    TriggerClientEvent('murderface-pets:client:syncStats', src, hash, {
+        food = petData.metadata.food,
+        thirst = petData.metadata.thirst,
+    })
     TriggerClientEvent('ox_lib:notify', src, {
-        description = 'Feeding was successful, wait a moment for it to take effect!',
+        description = string.format('Fed! Food: %.0f%%', petData.metadata.food),
         type = 'success'
     })
 end)
@@ -671,8 +712,13 @@ lib.callback.register('murderface-pets:server:decreaseThirst', function(source, 
     petData.metadata.thirst = math.max(0, petData.metadata.thirst - reduction)
     Update.xpAward(src, petData, Config.xp.watering)
 
+    -- Sync updated thirst to client
+    TriggerClientEvent('murderface-pets:client:syncStats', src, hash, {
+        food = petData.metadata.food,
+        thirst = petData.metadata.thirst,
+    })
     TriggerClientEvent('ox_lib:notify', src, {
-        description = Lang:t('success.successful_drinking'),
+        description = string.format('Hydrated! Thirst: %.0f%%', petData.metadata.thirst),
         type = 'success'
     })
     return true
@@ -1283,6 +1329,13 @@ lib.callback.register('murderface-pets:server:registerPet', function(source, dat
     local src = source
     local player = exports.qbx_core:GetPlayer(src)
     if not player then return false end
+
+    -- Clear pending spawn flag
+    local hash = data.item and data.item.metadata and data.item.metadata.hash
+    if hash and pendingSpawns[src] then
+        pendingSpawns[src][hash] = nil
+    end
+
     return Pet:setAsSpawned(src, data)
 end)
 
@@ -1458,11 +1511,18 @@ end)
 -- ============================
 
 CreateThread(function()
+    local statTickCounter = 0
+    local statInterval = math.max(1, math.floor((Config.dataUpdateInterval * 1000) / SAVE_INTERVAL))
+
     while true do
         Wait(SAVE_INTERVAL)
+        statTickCounter = statTickCounter + 1
+        local processStats = statTickCounter >= statInterval
+        if processStats then statTickCounter = 0 end
+
         for src, activePets in pairs(Pet.players) do
             for hash in pairs(activePets) do
-                Pet:saveData(src, hash)
+                Pet:saveData(src, hash, false, processStats)
             end
         end
     end
