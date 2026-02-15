@@ -425,6 +425,7 @@ function createActivePetThread(ped, item)
 
             -- Pet has died — keep dead until revived/despawned
             if IsPedDeadOrDying(savedData.entity, true) then
+                DetachLeash(savedData.item.metadata.hash)
                 local c_health = GetEntityHealth(savedData.entity)
                 if c_health <= 100 then
                     TriggerServerEvent('murderface-pets:server:updatePetStats',
@@ -470,6 +471,7 @@ end)
 -- ============================
 
 RegisterNetEvent('murderface-pets:client:despawnPet', function(hash, instant)
+    DetachLeash(hash)
     if instant then
         ActivePed:remove(hash)
         TriggerServerEvent('murderface-pets:server:setAsDespawned', hash)
@@ -497,6 +499,7 @@ end)
 -- ============================
 
 RegisterNetEvent('qbx_core:client:onLogout', function()
+    DetachAllLeashes()
     ActivePed:removeAll()
 end)
 
@@ -763,6 +766,13 @@ CreateThread(function()
         if activePet then
             local petPed = activePet.entity
             if inVehicle and not wasInVehicle then
+                -- Auto-detach leash when entering a vehicle
+                local hash = activePet.item.metadata.hash
+                if IsLeashed(hash) then
+                    DetachLeash(hash)
+                    lib.notify({ description = 'Leash auto-removed (vehicle)', type = 'info', duration = 3000 })
+                end
+
                 local vehicle = GetVehiclePedIsUsing(plyPed)
                 if vehicle and vehicle ~= 0 and not IsPedInAnyVehicle(petPed, false) then
                     putPetInVehicle(vehicle, petPed)

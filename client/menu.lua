@@ -42,6 +42,7 @@ local menu = {
         triggerNotification = { 'PETNAME is now hunting!', 'PETNAME can not do that!' },
         show = function(activePed)
             if not activePed.canHunt then return false end
+            if IsLeashed(activePed.item.metadata.hash) then return false end
             return (activePed.item.metadata.level or 0) >= Config.progression.minHuntLevel
         end,
         action = function(_, activePed)
@@ -76,6 +77,7 @@ local menu = {
         description = 'Hunt and bring the prey to you',
         show = function(activePed)
             if not activePed.canHunt then return false end
+            if IsLeashed(activePed.item.metadata.hash) then return false end
             return (activePed.item.metadata.level or 0) >= Config.progression.minHuntLevel
         end,
         action = function(plyped, activePed)
@@ -104,6 +106,9 @@ local menu = {
         icon = 'location-arrow',
         iconColor = '#12b886',
         description = 'Point where your pet should go',
+        show = function(activePed)
+            return not IsLeashed(activePed.item.metadata.hash)
+        end,
         action = function(_, activePed)
             doSomethingIfPedIsInsideVehicle(activePed.entity)
             goThere(activePed.entity)
@@ -203,6 +208,26 @@ local menu = {
             SetAnimalMood(activePed.entity, 1)
             PlayAnimalVocalization(activePed.entity, 3, 'bark')
             Anims.play(activePed.entity, activePed.animClass, 'bark')
+        end,
+    },
+    {
+        label = 'Toggle Leash',
+        TYPE = 'ToggleLeash',
+        icon = 'link',
+        iconColor = '#228be6',
+        description = 'Attach or remove a leash',
+        show = function(activePed)
+            if not Config.leash or not Config.leash.enabled then return false end
+            local species = activePed.petConfig and activePed.petConfig.species
+            if not species then return false end
+            for _, s in ipairs(Config.leash.speciesAllowed) do
+                if species == s then return true end
+            end
+            return false
+        end,
+        action = function(_, activePed)
+            ToggleLeash(activePed)
+            return true
         end,
     },
     {

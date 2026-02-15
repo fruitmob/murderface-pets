@@ -18,6 +18,7 @@ client_scripts {
     '@qbx_core/modules/playerdata.lua',
     'client/functions.lua',
     'client/client.lua',
+    'client/leash.lua',
     'client/menu.lua',
 }
 

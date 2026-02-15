@@ -577,6 +577,14 @@ RegisterNetEvent('murderface-pets:server:onLogout', function(hashes)
 end)
 
 -- ============================
+--      Leash Sync
+-- ============================
+
+RegisterNetEvent('murderface-pets:server:syncLeash', function(petNetId, leashed)
+    TriggerClientEvent('murderface-pets:client:syncLeash', -1, source, petNetId, leashed)
+end)
+
+-- ============================
 --      Server Callbacks
 -- ============================
 

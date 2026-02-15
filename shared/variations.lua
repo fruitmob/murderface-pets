@@ -78,6 +78,59 @@ Variations.coats = {
     ['a_c_rhesus'] = {
         { name = 'default',   component = 0, drawable = 0, texture = 0 },
     },
+
+    -- Addon models (popcornrp-pets)
+    ['k9_male'] = {
+        { name = 'tan',       component = 0, drawable = 0, texture = 0 },
+        { name = 'black',     component = 0, drawable = 0, texture = 1 },
+        { name = 'sable',     component = 0, drawable = 0, texture = 2 },
+        { name = 'bicolor',   component = 0, drawable = 0, texture = 3 },
+        { name = 'white',     component = 0, drawable = 0, texture = 4 },
+        { name = 'silver',    component = 0, drawable = 0, texture = 5 },
+        { name = 'red',       component = 0, drawable = 0, texture = 6 },
+        { name = 'dark',      component = 0, drawable = 0, texture = 7 },
+    },
+    ['k9_female'] = {
+        { name = 'tan',       component = 0, drawable = 0, texture = 0 },
+        { name = 'black',     component = 0, drawable = 0, texture = 1 },
+        { name = 'sable',     component = 0, drawable = 0, texture = 2 },
+        { name = 'bicolor',   component = 0, drawable = 0, texture = 3 },
+        { name = 'white',     component = 0, drawable = 0, texture = 4 },
+        { name = 'silver',    component = 0, drawable = 0, texture = 5 },
+        { name = 'red',       component = 0, drawable = 0, texture = 6 },
+        { name = 'dark',      component = 0, drawable = 0, texture = 7 },
+    },
+    ['a_c_k9'] = {
+        { name = 'tan',       component = 0, drawable = 0, texture = 0 },
+        { name = 'black',     component = 0, drawable = 0, texture = 1 },
+        { name = 'sable',     component = 0, drawable = 0, texture = 2 },
+        { name = 'bicolor',   component = 0, drawable = 0, texture = 3 },
+    },
+    ['a_c_dalmatian'] = {
+        { name = 'default',   component = 0, drawable = 0, texture = 0 },
+    },
+    ['doberman'] = {
+        { name = 'black',     component = 0, drawable = 0, texture = 0 },
+        { name = 'red',       component = 0, drawable = 0, texture = 1 },
+        { name = 'blue',      component = 0, drawable = 0, texture = 2 },
+    },
+    ['chowchow'] = {
+        { name = 'default',   component = 0, drawable = 0, texture = 0 },
+    },
+    ['robot_dog'] = {
+        { name = 'default',   component = 0, drawable = 0, texture = 0 },
+    },
+    ['armadillo'] = {
+        { name = 'default',   component = 0, drawable = 0, texture = 0 },
+    },
+
+    -- Addon model (AddonPDK9)
+    ['pdk9'] = {
+        { name = 'tan',       component = 0, drawable = 0, texture = 0 },
+        { name = 'black',     component = 0, drawable = 0, texture = 1 },
+        { name = 'sable',     component = 0, drawable = 0, texture = 2 },
+        { name = 'bicolor',   component = 0, drawable = 0, texture = 3 },
+    },
 }
 
 --- Apply a coat variation to a ped

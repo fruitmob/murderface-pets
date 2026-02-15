@@ -2,7 +2,7 @@
 
 **A free, open-source pet companion system for FiveM — built on the Qbox/ox stack.**
 
-Most pet scripts on Tebex charge $15–$30 for a fraction of what this does. murderface-pets gives you 16 animals, a full XP and progression system, K9 police functionality, hunting, tricks, grooming, and more — all config-driven, all free.
+Most pet scripts on Tebex charge $15–$30 for a fraction of what this does. murderface-pets gives you 27 animals (16 vanilla + 11 addon), a full XP and progression system, K9 police functionality, hunting, leash system, tricks, grooming, and more — all config-driven, all free.
 
 ## Why This Script
 
@@ -14,8 +14,8 @@ Most pet scripts on Tebex charge $15–$30 for a fraction of what this does. mur
 
 ## Features at a Glance
 
-### 16 Unique Companions
-Dogs, cats, big cats, primates, and small animals — each with per-model health, pricing, animations, and trait flags.
+### 27 Unique Companions
+Dogs, cats, big cats, primates, small animals, and addon breeds — each with per-model health, pricing, animations, and trait flags.
 
 | Category | Animals | Highlights |
 |----------|---------|------------|
@@ -25,6 +25,8 @@ Dogs, cats, big cats, primates, and small animals — each with per-model health
 | Wild | Black Panther, Mountain Lion, Coyote | Hunting predators |
 | Small Animals | Chicken, Rabbit | Idle companions |
 | Primates | Chimpanzee, Rhesus Monkey | Build 3258+ |
+| Addon Dogs | K9 M/F, K9 Original, Dalmatian, Doberman, Chow Chow, Robot Dog, Police K9 | Hunting, K9, multiple coats |
+| Addon Exotic | Armadillo, Giant Cockroach, Tarantula | Novelty pets |
 
 ### XP & Progression System
 Pets level up from 0 to 50 through **7 active XP sources** and passive XP ticks. Progression unlocks new abilities as your pet grows.
@@ -52,11 +54,14 @@ Pets level up from 0 to 50 through **7 active XP sources** and passive XP ticks.
 Real-time XP display in the View Stats panel — no need to despawn/respawn to check progress. Milestone celebrations at levels 10, 25, and 50 with notifications and pet vocalizations.
 
 ### Full Interaction System
-- **Command menu** (default: `O` key) — follow, wait, sit, tricks, hunt, go there, get in car
+- **Command menu** (default: `O` key) — follow, wait, sit, tricks, hunt, go there, get in car, toggle leash
 - **ox_target interactions** — pet, view stats, heal, revive, give water
 - **Petting animations** — player and pet play synced animations, awards XP, relieves stress (configurable HUD integration)
 - **Tricks** — sit, beg, shake paw, play dead (level-gated, per-trick unlock)
 - **Auto vehicle enter/exit** — pet hops in when you get in a car, hops out when you leave
+- **Leash system** — rope-based visual leash for dogs, enforces distance, syncs across clients, auto-detaches on vehicle entry/death/despawn
+- **Pet name overhead** — 3D floating name and level title above each active pet
+- **Pet emotes** — `/petemote` command with moods, vocalizations, and animations
 
 ### Hunting System
 Dogs and wild cats can hunt local wildlife. Level-gated at level 5. Pets chase, attack, and return with the kill. Awards XP on successful hunts.
@@ -91,6 +96,17 @@ Requires a configurable job (default: `police`) and level 10+.
 | ox_inventory | [overextended/ox_inventory](https://github.com/overextended/ox_inventory) |
 | ox_target | [overextended/ox_target](https://github.com/overextended/ox_target) |
 | oxmysql | [overextended/oxmysql](https://github.com/overextended/oxmysql) |
+
+### Optional Addon Models
+
+These free streaming resources add 11 extra pet models. Download them separately and `ensure` them before `murderface-pets`. The script detects available models automatically — addon pets that aren't installed simply won't spawn.
+
+| Resource | Models | Author | License |
+|----------|--------|--------|---------|
+| [popcornrp-pets](https://github.com/alberttheprince/popcornrp-pets) | K9 M/F, K9 Original, Dalmatian, Doberman, Chow Chow, Robot Dog, Armadillo, Cockroach, Tarantula | alberttheprince | Use permitted, no resale |
+| [AddonPDK9](https://github.com/12LetterMeme/AddonPDK9) | Police K9 (German Shepherd) | 12LetterMeme | GPL-3.0 |
+
+The K9 models from popcornrp-pets include built-in component accessories (vests, collars, glasses, nameplates) that can be accessed via `SetPedComponentVariation`. Full accessory menus are planned for a future update.
 
 ## Installation
 
@@ -349,6 +365,9 @@ All settings are in `config.lua` with inline comments. Everything is tunable wit
 | `Config.petShop` | Shop NPC model, coords, blip settings |
 | `Config.suppliesShop` | Supply shop NPC model, coords, blip settings |
 | `Config.stressRelief` | Stress reduction from petting (for HUD scripts) |
+| `Config.leash` | Leash length, rope type, allowed species |
+| `Config.nameTag` | Overhead pet name display settings |
+| `Config.petEmotes` | Emote definitions for `/petemote` command |
 | `Config.blip` | Map blip settings for active pets |
 
 ## Developer Notes
@@ -415,6 +434,7 @@ murderface-pets/
 ├── client/
 │   ├── functions.lua       -- Spawn helpers, attack/hunt/K9 logic
 │   ├── client.lua          -- ActivePed tracking, core interactions
+│   ├── leash.lua           -- Rope-based leash system + network sync
 │   └── menu.lua            -- Context menus (ox_lib)
 └── inventory_images/       -- Item icons for ox_inventory
 ```
