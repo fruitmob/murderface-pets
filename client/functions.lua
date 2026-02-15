@@ -7,6 +7,21 @@
 --    Raycast / Draw Helpers
 -- ============================
 
+function DrawText3D(coords, text, scale, r, g, b, a)
+    SetDrawOrigin(coords.x, coords.y, coords.z, 0)
+    SetTextFont(4)
+    SetTextScale(0.0, scale or 0.35)
+    SetTextColour(r or 255, g or 255, b or 255, a or 215)
+    SetTextDropShadow(0, 0, 0, 0, 255)
+    SetTextEdge(2, 0, 0, 0, 150)
+    SetTextOutline()
+    SetTextEntry('STRING')
+    SetTextCentre(true)
+    AddTextComponentSubstringPlayerName(text)
+    DrawText(0.0, 0.0)
+    ClearDrawOrigin()
+end
+
 function Draw2DText(content, font, colour, scale, x, y)
     SetTextFont(font)
     SetTextScale(scale, scale)

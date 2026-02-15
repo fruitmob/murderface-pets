@@ -24,6 +24,22 @@ Config.blip = {
     shortRange = false,
 }
 
+Config.nameTag = {
+    enabled = true,
+    distance = 15.0,          -- max draw distance
+    scale = 0.35,
+    showLevel = true,          -- show level title under name
+}
+
+Config.petEmotes = {
+    happy = { mood = 1, vocalization = 'bark',  anim = 'bark' },
+    angry = { mood = 0, vocalization = 'growl', anim = 'bark' },
+    sad   = { mood = 3, vocalization = 'whine' },
+    bark  = { mood = 1, vocalization = 'bark',  anim = 'bark' },
+    sit   = { anim = 'sit' },
+    sleep = { anim = 'sleep' },
+}
+
 Config.stressRelief = {
     enabled = true,              -- set true if you have a HUD with stress mechanics
     event = 'hud:server:RelieveStress',

@@ -782,3 +782,85 @@ CreateThread(function()
         Wait(500)
     end
 end)
+
+-- ============================
+--     Pet Name Overhead
+-- ============================
+
+if Config.nameTag.enabled then
+    CreateThread(function()
+        while true do
+            local plyCoords = GetEntityCoords(PlayerPedId())
+            local drawn = false
+
+            for _, petData in pairs(ActivePed.pets) do
+                if DoesEntityExist(petData.entity) and not IsEntityDead(petData.entity) then
+                    local petCoords = GetEntityCoords(petData.entity)
+                    local dist = #(plyCoords - petCoords)
+
+                    if dist <= Config.nameTag.distance then
+                        local name = petData.item.metadata.name or 'Pet'
+                        local headZ = petCoords.z + 1.0
+                        DrawText3D(vector3(petCoords.x, petCoords.y, headZ),
+                            name, Config.nameTag.scale)
+
+                        if Config.nameTag.showLevel then
+                            local level = petData.item.metadata.level or 0
+                            local title = Config.getLevelTitle(level)
+                            DrawText3D(vector3(petCoords.x, petCoords.y, headZ - 0.15),
+                                ('Lv.%d %s'):format(level, title),
+                                Config.nameTag.scale * 0.8, 180, 220, 255, 180)
+                        end
+                        drawn = true
+                    end
+                end
+            end
+
+            Wait(drawn and 0 or 500)
+        end
+    end)
+end
+
+-- ============================
+--     Pet Emotes (/petemote)
+-- ============================
+
+RegisterCommand('petemote', function(_, args)
+    local emoteName = args[1]
+    if not emoteName then
+        local emoteList = {}
+        for name in pairs(Config.petEmotes) do
+            emoteList[#emoteList + 1] = name
+        end
+        lib.notify({
+            description = 'Usage: /petemote ' .. table.concat(emoteList, '|'),
+            type = 'info', duration = 7000,
+        })
+        return
+    end
+
+    local emote = Config.petEmotes[emoteName:lower()]
+    if not emote then
+        lib.notify({ description = 'Unknown emote: ' .. emoteName, type = 'error', duration = 5000 })
+        return
+    end
+
+    local activePed = ActivePed:read()
+    if not activePed then
+        lib.notify({ description = Lang:t('error.no_pet_under_control'), type = 'error', duration = 5000 })
+        return
+    end
+
+    local ped = activePed.entity
+    if not DoesEntityExist(ped) or IsEntityDead(ped) then return end
+
+    if emote.mood then
+        SetAnimalMood(ped, emote.mood)
+    end
+    if emote.vocalization then
+        PlayAnimalVocalization(ped, 3, emote.vocalization)
+    end
+    if emote.anim and activePed.animClass then
+        Anims.play(ped, activePed.animClass, emote.anim)
+    end
+end, false)

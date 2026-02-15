@@ -366,15 +366,26 @@ exports(Config.items.waterbottle.name, function(event, item, inventory, slot)
     if event == 'usingItem' then
         local src = inventory.id
         local refillCost = Config.items.waterbottle.refillCost
-        local count = exports.ox_inventory:GetItemCount(src, 'water_bottle')
-        if not count or count < refillCost then
+
+        -- Accept either 'water' or 'water_bottle' (covers different server configs)
+        local waterItem
+        for _, name in ipairs({'water', 'water_bottle'}) do
+            local c = exports.ox_inventory:GetItemCount(src, name)
+            if c and c >= refillCost then
+                waterItem = name
+                break
+            end
+        end
+
+        if not waterItem then
             TriggerClientEvent('ox_lib:notify', src, {
                 description = string.format(Lang:t('error.not_enough_water_bottles'), refillCost),
                 type = 'error'
             })
             return false
         end
-        exports.ox_inventory:RemoveItem(src, 'water_bottle', refillCost)
+
+        exports.ox_inventory:RemoveItem(src, waterItem, refillCost)
         local invItem = inventory.items[slot]
         local metadata = invItem and invItem.metadata or {}
         TriggerClientEvent('murderface-pets:client:fillBottle', src, { name = item.name, slot = slot, metadata = metadata })
