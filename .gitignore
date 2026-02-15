@@ -40,3 +40,27 @@ test.lua
 *.x86_64
 *.hex
 
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+
+# Editor / IDE configs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+
+# Environment / secrets
+.env
+.env.*
+
+# Logs
+*.log
+
+# FiveM cache
+cache/

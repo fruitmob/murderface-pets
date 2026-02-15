@@ -367,6 +367,14 @@ Open `ox_inventory/data/items.lua` and paste the following block inside the `ret
 		server = { export = 'murderface-pets.murderface_groomingkit' },
 	},
 
+	['murderface_leash'] = {
+		label = 'Pet Leash',
+		weight = 100,
+		consume = 0,
+		description = 'Attach a leash to your pet',
+		server = { export = 'murderface-pets.murderface_leash' },
+	},
+
 	['murderface_doghouse'] = {
 		label = 'Dog House',
 		weight = 5000,
@@ -376,9 +384,121 @@ Open `ox_inventory/data/items.lua` and paste the following block inside the `ret
 	},
 ```
 
+<details>
+<summary><strong>Addon pet items (click to expand)</strong> — only add these if you install the corresponding streaming resources</summary>
+
+```lua
+	-- ========================================
+	--  murderface-pets: Addon Pet Items
+	--  Requires: popcornrp-pets and/or AddonPDK9 streaming resources
+	-- ========================================
+
+	['murderface_k9m'] = {
+		label = 'K9 Shepherd (M)',
+		weight = 100,
+		stack = false,
+		consume = 0,
+		description = 'A male K9 German Shepherd companion',
+		server = { export = 'murderface-pets.murderface_k9m' },
+	},
+
+	['murderface_k9f'] = {
+		label = 'K9 Shepherd (F)',
+		weight = 100,
+		stack = false,
+		consume = 0,
+		description = 'A female K9 German Shepherd companion',
+		server = { export = 'murderface-pets.murderface_k9f' },
+	},
+
+	['murderface_k9'] = {
+		label = 'K9 Original',
+		weight = 100,
+		stack = false,
+		consume = 0,
+		description = 'An original K9 companion',
+		server = { export = 'murderface-pets.murderface_k9' },
+	},
+
+	['murderface_dalmatian'] = {
+		label = 'Dalmatian',
+		weight = 100,
+		stack = false,
+		consume = 0,
+		description = 'A spotted Dalmatian companion',
+		server = { export = 'murderface-pets.murderface_dalmatian' },
+	},
+
+	['murderface_doberman'] = {
+		label = 'Doberman',
+		weight = 100,
+		stack = false,
+		consume = 0,
+		description = 'A sleek Doberman companion',
+		server = { export = 'murderface-pets.murderface_doberman' },
+	},
+
+	['murderface_chowchow'] = {
+		label = 'Chow Chow',
+		weight = 100,
+		stack = false,
+		consume = 0,
+		description = 'A fluffy Chow Chow companion',
+		server = { export = 'murderface-pets.murderface_chowchow' },
+	},
+
+	['murderface_robotdog'] = {
+		label = 'Robot Dog',
+		weight = 100,
+		stack = false,
+		consume = 0,
+		description = 'A mechanical canine companion',
+		server = { export = 'murderface-pets.murderface_robotdog' },
+	},
+
+	['murderface_armadillo'] = {
+		label = 'Armadillo',
+		weight = 100,
+		stack = false,
+		consume = 0,
+		description = 'A tough little Armadillo companion',
+		server = { export = 'murderface-pets.murderface_armadillo' },
+	},
+
+	['murderface_cockroach'] = {
+		label = 'Giant Cockroach',
+		weight = 100,
+		stack = false,
+		consume = 0,
+		description = 'A surprisingly resilient companion',
+		server = { export = 'murderface-pets.murderface_cockroach' },
+	},
+
+	['murderface_tarantula'] = {
+		label = 'Tarantula',
+		weight = 100,
+		stack = false,
+		consume = 0,
+		description = 'A hairy eight-legged companion',
+		server = { export = 'murderface-pets.murderface_tarantula' },
+	},
+
+	-- AddonPDK9 (https://github.com/12LetterMeme/AddonPDK9)
+	['murderface_pdk9'] = {
+		label = 'Police K9',
+		weight = 100,
+		stack = false,
+		consume = 0,
+		description = 'A trained Police K9 German Shepherd',
+		server = { export = 'murderface-pets.murderface_pdk9' },
+	},
+```
+
+</details>
+
 ### 3. Inventory images
 
-Copy all `.png` files from the `inventory_images/` folder into your ox_inventory web images directory (typically `ox_inventory/web/images/`). All 22 images (16 pets + 6 supplies) are included.
+Copy all `.png` files from the `inventory_images/` folder into your ox_inventory web images directory (typically `ox_inventory/web/images/`). All 24 images (16 pets + 8 supplies/accessories) are included. Addon pet images are not included — you'll need to create or source your own if using addon models.
 
 ### 4. Start the resource
 
@@ -403,6 +523,7 @@ All settings are in `config.lua` with inline comments. Everything is tunable wit
 | `Config.maxActivePets` | Max simultaneously spawned pets (default: 2) |
 | `Config.petMenuKeybind` | Key to open companion menu (default: `O`) |
 | `Config.xp` | Per-action XP awards for all 7 sources |
+| `Config.activityCooldowns` | Seconds between repeat XP awards per activity |
 | `Config.progression` | Level gates, follow speed tiers, milestones, health regen |
 | `Config.trickLevels` | Per-trick unlock levels |
 | `Config.levelTitles` | Rank title thresholds |

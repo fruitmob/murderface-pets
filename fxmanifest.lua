@@ -3,7 +3,7 @@ games { 'gta5' }
 name 'murderface-pets'
 author 'FMRP Development Team'
 description 'Pet companion system for FMRP'
-version '1.0.0'
+version '1.1.0'
 
 shared_scripts {
     '@ox_lib/init.lua',
