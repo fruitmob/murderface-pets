@@ -429,6 +429,77 @@ function HuntandGrab(plyped, activePed)
 end
 
 -- ============================
+--    Tracker Specialization
+-- ============================
+
+--- Tracker specialization: scan and highlight nearby peds/animals
+---@param activePed table ActivePed data
+function TrackerScan(activePed)
+    local specCfg = Config.specializations and Config.specializations.tracker
+    if not specCfg then return end
+
+    local petEntity = activePed.entity
+    local petPos = GetEntityCoords(petEntity)
+    local radius = specCfg.trackRadius
+    local duration = specCfg.markerDuration
+
+    -- Pet barks to indicate scanning
+    SetAnimalMood(petEntity, 1)
+    PlayAnimalVocalization(petEntity, 3, 'bark')
+
+    -- Find nearby peds within radius
+    local pedPool = GetGamePool('CPed')
+    local playerPed = PlayerPedId()
+    local targets = {}
+
+    for _, ped in ipairs(pedPool) do
+        if ped ~= petEntity and ped ~= playerPed and not IsEntityDead(ped) then
+            local dist = #(petPos - GetEntityCoords(ped))
+            if dist <= radius then
+                targets[#targets + 1] = ped
+            end
+        end
+    end
+
+    if #targets == 0 then
+        lib.notify({ description = 'No targets detected nearby', type = 'info', duration = 3000 })
+        return
+    end
+
+    lib.notify({
+        description = string.format('Detected %d target%s nearby!', #targets, #targets == 1 and '' or 's'),
+        type = 'success',
+        duration = 5000,
+    })
+
+    -- Draw markers above detected peds for the configured duration
+    CreateThread(function()
+        local endTime = GetGameTimer() + duration
+        while GetGameTimer() < endTime do
+            for i = #targets, 1, -1 do
+                local ped = targets[i]
+                if DoesEntityExist(ped) and not IsEntityDead(ped) then
+                    local pos = GetEntityCoords(ped)
+                    DrawMarker(2, pos.x, pos.y, pos.z + 2.0,
+                        0.0, 0.0, 0.0, 0.0, 180.0, 0.0,
+                        0.5, 0.5, 0.5,
+                        50, 200, 255, 150,
+                        false, true, 2, nil, nil, false)
+                else
+                    table.remove(targets, i)
+                end
+            end
+            if #targets == 0 then break end
+            Wait(0)
+        end
+    end)
+
+    -- Award tracking XP (server-side, with cooldown)
+    TriggerServerEvent('murderface-pets:server:updatePetStats',
+        activePed.item.metadata.hash, { key = 'activity', action = 'tracking' })
+end
+
+-- ============================
 --    K9: Job Check
 -- ============================
 

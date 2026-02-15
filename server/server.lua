@@ -61,6 +61,46 @@ CreateThread(function()
             INDEX `idx_hash` (`item_hash`)
         )
     ]])
+
+    MySQL.query([[
+        CREATE TABLE IF NOT EXISTS `murderface_stray_trust` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `citizenid` VARCHAR(50) NOT NULL,
+            `stray_id` VARCHAR(50) NOT NULL,
+            `trust` INT NOT NULL DEFAULT 0,
+            `last_fed` TIMESTAMP NULL,
+            `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY `idx_citizen_stray` (`citizenid`, `stray_id`),
+            INDEX `idx_stray_id` (`stray_id`)
+        )
+    ]])
+
+    MySQL.query([[
+        CREATE TABLE IF NOT EXISTS `murderface_doghouses` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `citizenid` VARCHAR(50) NOT NULL,
+            `coords` VARCHAR(100) NOT NULL,
+            `heading` FLOAT NOT NULL DEFAULT 0,
+            `placed_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY `idx_citizen_doghouse` (`citizenid`)
+        )
+    ]])
+
+    MySQL.query([[
+        CREATE TABLE IF NOT EXISTS `murderface_breeding` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `citizenid` VARCHAR(50) NOT NULL,
+            `parent1_hash` VARCHAR(50) NOT NULL,
+            `parent2_hash` VARCHAR(50) NOT NULL,
+            `offspring_item` VARCHAR(50) NOT NULL,
+            `offspring_metadata` LONGTEXT NOT NULL,
+            `status` ENUM('pending','ready','claimed') NOT NULL DEFAULT 'pending',
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX `idx_citizen_breeding` (`citizenid`),
+            INDEX `idx_status` (`status`)
+        )
+    ]])
 end)
 
 --- Async backup pet data to database
@@ -679,6 +719,521 @@ lib.callback.register('murderface-pets:server:searchVehicle', function(source, d
         type = 'error'
     })
     return false
+end)
+
+-- Choose specialization
+lib.callback.register('murderface-pets:server:chooseSpecialization', function(source, hash, specName)
+    local src = source
+    local player = exports.qbx_core:GetPlayer(src)
+    if not player then return false, 'Player not found' end
+
+    local petData = Pet:findByHash(src, hash)
+    if not petData then return false, 'Pet not found' end
+
+    local level = petData.metadata.level or 0
+    if level < Config.progression.minSpecializationLevel then
+        return false, string.format('Requires level %d', Config.progression.minSpecializationLevel)
+    end
+
+    if petData.metadata.specialization then
+        return false, 'Already specialized'
+    end
+
+    if not Config.specializations or not Config.specializations[specName] then
+        return false, 'Invalid specialization'
+    end
+
+    petData.metadata.specialization = specName
+    Pet:saveData(src, hash)
+    return true, specName
+end)
+
+-- ============================
+--     Stray Taming
+-- ============================
+
+local strayTimers = {} -- { [strayId] = os.time() } respawn cooldown after taming
+
+--- Find stray config by ID
+local function findStrayCfg(strayId)
+    if not Config.strays or not Config.strays.spawnPoints then return nil end
+    for _, s in ipairs(Config.strays.spawnPoints) do
+        if s.id == strayId then return s end
+    end
+    return nil
+end
+
+-- Check if a stray should spawn (respawn timer + spawn chance roll)
+lib.callback.register('murderface-pets:server:checkStrayStatus', function(_, strayId)
+    if not Config.strays or not Config.strays.enabled then return false end
+
+    -- Check respawn timer
+    if strayTimers[strayId] then
+        local elapsed = os.time() - strayTimers[strayId]
+        if elapsed < Config.strays.respawnTime then
+            return false
+        end
+        strayTimers[strayId] = nil
+    end
+
+    local strayCfg = findStrayCfg(strayId)
+    if not strayCfg then return false end
+
+    return math.random() <= strayCfg.spawnChance
+end)
+
+-- Feed a stray to build trust
+lib.callback.register('murderface-pets:server:feedStray', function(source, strayId)
+    local src = source
+    if not Config.strays or not Config.strays.enabled then return false, 'Disabled' end
+
+    local player = exports.qbx_core:GetPlayer(src)
+    if not player then return false, 'Player not found' end
+    local citizenid = player.PlayerData.citizenid
+
+    local strayCfg = findStrayCfg(strayId)
+    if not strayCfg then return false, 'Invalid stray' end
+
+    -- Check respawn timer
+    if strayTimers[strayId] then
+        local elapsed = os.time() - strayTimers[strayId]
+        if elapsed < Config.strays.respawnTime then
+            return false, 'This stray is not here right now'
+        end
+        strayTimers[strayId] = nil
+    end
+
+    -- Check feed cooldown from DB
+    local rows = MySQL.query.await(
+        'SELECT trust, last_fed FROM murderface_stray_trust WHERE citizenid = ? AND stray_id = ?',
+        { citizenid, strayId }
+    )
+
+    local currentTrust = 0
+    if rows and #rows > 0 then
+        currentTrust = rows[1].trust
+        if rows[1].last_fed then
+            local cdCheck = MySQL.scalar.await(
+                'SELECT TIMESTAMPDIFF(SECOND, last_fed, NOW()) FROM murderface_stray_trust WHERE citizenid = ? AND stray_id = ?',
+                { citizenid, strayId }
+            )
+            if cdCheck and cdCheck < Config.strays.feedCooldown then
+                local remaining = Config.strays.feedCooldown - cdCheck
+                return false, string.format('Come back in %d minutes', math.ceil(remaining / 60))
+            end
+        end
+    end
+
+    -- Consume food item
+    if not exports.ox_inventory:RemoveItem(src, Config.strays.feedItem, 1) then
+        return false, 'You need pet food to feed strays'
+    end
+
+    -- Update trust in DB
+    local newTrust = currentTrust + Config.strays.trustPerFeed
+
+    MySQL.query(
+        'INSERT INTO murderface_stray_trust (citizenid, stray_id, trust, last_fed) VALUES (?, ?, ?, NOW()) ON DUPLICATE KEY UPDATE trust = ?, last_fed = NOW()',
+        { citizenid, strayId, newTrust, newTrust }
+    )
+
+    -- Check if taming threshold reached
+    if newTrust >= Config.strays.trustThreshold then
+        -- Grant pet item
+        exports.ox_inventory:AddItem(src, strayCfg.item, 1)
+
+        -- Initialize the pet and apply rare coat if configured
+        Wait(200)
+        local items = exports.ox_inventory:GetInventoryItems(src)
+        if items then
+            for _, item in pairs(items) do
+                if item.name == strayCfg.item and (not item.metadata or not item.metadata.hash) then
+                    InitPet(src, { name = item.name, slot = item.slot, metadata = item.metadata })
+                    if strayCfg.rareCoat then
+                        Wait(100)
+                        local freshItems = exports.ox_inventory:GetInventoryItems(src)
+                        if freshItems then
+                            for _, fi in pairs(freshItems) do
+                                if fi.name == strayCfg.item and fi.slot == item.slot and fi.metadata and fi.metadata.hash then
+                                    fi.metadata.variation = strayCfg.rareCoat
+                                    exports.ox_inventory:SetMetadata(src, fi.slot, fi.metadata)
+                                    break
+                                end
+                            end
+                        end
+                    end
+                    break
+                end
+            end
+        end
+
+        -- Clean up trust record and start respawn timer
+        MySQL.query('DELETE FROM murderface_stray_trust WHERE citizenid = ? AND stray_id = ?',
+            { citizenid, strayId })
+        strayTimers[strayId] = os.time()
+
+        return true, 'tamed'
+    end
+
+    return true, string.format('Trust: %d/%d', newTrust, Config.strays.trustThreshold)
+end)
+
+-- ============================
+--    Dog House / Breeding
+-- ============================
+
+local doghouseCache = {} -- { [citizenid] = vector3 }
+
+-- Load placed dog houses into cache on startup
+CreateThread(function()
+    Wait(2000)
+
+    -- Promote pending breeding to ready (gestation = next server restart)
+    local affectedRows = MySQL.update.await(
+        "UPDATE murderface_breeding SET status = 'ready' WHERE status = 'pending'"
+    )
+    if affectedRows and affectedRows > 0 then
+        print(('[murderface-pets] ^2Breeding: promoted %d pending offspring to ready^0'):format(affectedRows))
+    end
+
+    -- Load doghouse positions into cache
+    local rows = MySQL.query.await('SELECT citizenid, coords, heading FROM murderface_doghouses')
+    if rows then
+        for _, row in ipairs(rows) do
+            local parts = {}
+            for part in row.coords:gmatch('[^,]+') do
+                parts[#parts + 1] = tonumber(part)
+            end
+            if #parts == 3 then
+                doghouseCache[row.citizenid] = vector3(parts[1], parts[2], parts[3])
+            end
+        end
+        if #rows > 0 then
+            print(('[murderface-pets] ^2Loaded %d dog house locations^0'):format(#rows))
+        end
+    end
+end)
+
+-- Dog House item export handler
+exports(Config.items.doghouse.name, function(event, item, inventory, slot)
+    if event ~= 'usingItem' then return end
+    local src = inventory.id
+
+    local player = exports.qbx_core:GetPlayer(src)
+    if not player then return false end
+    local citizenid = player.PlayerData.citizenid
+
+    if doghouseCache[citizenid] then
+        TriggerClientEvent('ox_lib:notify', src, {
+            description = Lang:t('breeding.already_have_doghouse'),
+            type = 'error'
+        })
+        return false
+    end
+
+    TriggerClientEvent('murderface-pets:client:startDoghousePlacement', src)
+    return false
+end)
+
+-- Rest bonus: client tells server when a pet is near the dog house
+RegisterNetEvent('murderface-pets:server:setNearDoghouse', function(hash, isNear)
+    local src = source
+    if not Pet.players[src] then return end
+    local petData = Pet.players[src][hash]
+    if petData then
+        petData.nearDoghouse = isNear
+    end
+end)
+
+-- Place dog house
+lib.callback.register('murderface-pets:server:placeDoghouse', function(source, coords, heading)
+    local src = source
+    local player = exports.qbx_core:GetPlayer(src)
+    if not player then return false, 'Player not found' end
+    local citizenid = player.PlayerData.citizenid
+
+    if doghouseCache[citizenid] then
+        return false, 'You already have a dog house placed'
+    end
+
+    if not exports.ox_inventory:RemoveItem(src, Config.items.doghouse.name, 1) then
+        return false, 'Failed to remove dog house from inventory'
+    end
+
+    local coordStr = string.format('%.2f,%.2f,%.2f', coords.x, coords.y, coords.z)
+    MySQL.query(
+        'INSERT INTO murderface_doghouses (citizenid, coords, heading) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE coords = VALUES(coords), heading = VALUES(heading)',
+        { citizenid, coordStr, heading }
+    )
+
+    doghouseCache[citizenid] = vector3(coords.x, coords.y, coords.z)
+    return true
+end)
+
+-- Get player's dog house location
+lib.callback.register('murderface-pets:server:getDoghouse', function(source)
+    local src = source
+    local player = exports.qbx_core:GetPlayer(src)
+    if not player then return nil end
+    local citizenid = player.PlayerData.citizenid
+
+    local rows = MySQL.query.await(
+        'SELECT coords, heading FROM murderface_doghouses WHERE citizenid = ?',
+        { citizenid }
+    )
+    if not rows or #rows == 0 then return nil end
+
+    local row = rows[1]
+    local parts = {}
+    for part in row.coords:gmatch('[^,]+') do
+        parts[#parts + 1] = tonumber(part)
+    end
+    if #parts ~= 3 then return nil end
+    return { x = parts[1], y = parts[2], z = parts[3], heading = row.heading }
+end)
+
+-- Remove dog house (pick up)
+lib.callback.register('murderface-pets:server:removeDoghouse', function(source)
+    local src = source
+    local player = exports.qbx_core:GetPlayer(src)
+    if not player then return false end
+    local citizenid = player.PlayerData.citizenid
+
+    -- Block if breeding active
+    local activeBreeding = MySQL.scalar.await(
+        "SELECT COUNT(*) FROM murderface_breeding WHERE citizenid = ? AND status IN ('pending', 'ready')",
+        { citizenid }
+    )
+    if activeBreeding and activeBreeding > 0 then
+        return false, 'breeding_active'
+    end
+
+    local affected = MySQL.update.await(
+        'DELETE FROM murderface_doghouses WHERE citizenid = ?',
+        { citizenid }
+    )
+    if affected and affected > 0 then
+        doghouseCache[citizenid] = nil
+        exports.ox_inventory:AddItem(src, Config.items.doghouse.name, 1)
+        return true
+    end
+    return false
+end)
+
+-- Get eligible breeding pairs
+lib.callback.register('murderface-pets:server:getBreedingPairs', function(source)
+    local src = source
+    local items = exports.ox_inventory:GetInventoryItems(src)
+    if not items then return {} end
+
+    -- Collect all qualifying pets grouped by model
+    local petsByModel = {}
+    for _, item in pairs(items) do
+        local petCfg = Config.petsByItem[item.name]
+        if petCfg and item.metadata and item.metadata.hash then
+            local allowed = false
+            for _, sp in ipairs(Config.breeding.speciesAllowed) do
+                if petCfg.species == sp then allowed = true break end
+            end
+            if allowed and (item.metadata.level or 0) >= Config.breeding.minBreedLevel then
+                petsByModel[petCfg.model] = petsByModel[petCfg.model] or {}
+                petsByModel[petCfg.model][#petsByModel[petCfg.model] + 1] = {
+                    hash      = item.metadata.hash,
+                    name      = item.metadata.name or 'Pet',
+                    gender    = item.metadata.gender,
+                    item      = item.name,
+                    model     = petCfg.model,
+                    label     = petCfg.label,
+                    level     = item.metadata.level or 0,
+                    lastBreedTime = item.metadata.lastBreedTime,
+                }
+            end
+        end
+    end
+
+    -- Build pairs: same model, opposite gender, not on cooldown
+    local now = os.time()
+    local cooldownSec = Config.breeding.breedingCooldownHours * 3600
+    local breedingPairs = {}
+    for model, pets in pairs(petsByModel) do
+        local males, females = {}, {}
+        for _, pet in ipairs(pets) do
+            local onCooldown = pet.lastBreedTime and (now - pet.lastBreedTime) < cooldownSec
+            if not onCooldown then
+                if pet.gender == true then
+                    males[#males + 1] = pet
+                else
+                    females[#females + 1] = pet
+                end
+            end
+        end
+        for _, m in ipairs(males) do
+            for _, f in ipairs(females) do
+                breedingPairs[#breedingPairs + 1] = { male = m, female = f, model = model }
+            end
+        end
+    end
+
+    return breedingPairs
+end)
+
+-- Start breeding
+lib.callback.register('murderface-pets:server:startBreeding', function(source, maleHash, femaleHash)
+    local src = source
+    local player = exports.qbx_core:GetPlayer(src)
+    if not player then return false, 'Player not found' end
+    local citizenid = player.PlayerData.citizenid
+
+    -- Verify dog house
+    if not doghouseCache[citizenid] then
+        return false, 'You need a placed dog house to breed'
+    end
+
+    -- Check no existing pending/ready
+    local existing = MySQL.scalar.await(
+        "SELECT COUNT(*) FROM murderface_breeding WHERE citizenid = ? AND status IN ('pending', 'ready')",
+        { citizenid }
+    )
+    if existing and existing > 0 then
+        return false, 'You already have a breeding in progress or a puppy to claim'
+    end
+
+    -- Find both pets in inventory
+    local items = exports.ox_inventory:GetInventoryItems(src)
+    if not items then return false, 'Inventory error' end
+
+    local malePet, femalePet
+    for _, item in pairs(items) do
+        if item.metadata and item.metadata.hash == maleHash then malePet = item end
+        if item.metadata and item.metadata.hash == femaleHash then femalePet = item end
+    end
+
+    if not malePet or not femalePet then
+        return false, 'Both pets must be in your inventory'
+    end
+
+    local maleCfg = Config.petsByItem[malePet.name]
+    local femaleCfg = Config.petsByItem[femalePet.name]
+    if not maleCfg or not femaleCfg or maleCfg.model ~= femaleCfg.model then
+        return false, 'Both pets must be the same breed'
+    end
+
+    if malePet.metadata.gender == femalePet.metadata.gender then
+        return false, 'You need one male and one female'
+    end
+
+    if (malePet.metadata.level or 0) < Config.breeding.minBreedLevel
+       or (femalePet.metadata.level or 0) < Config.breeding.minBreedLevel then
+        return false, string.format('Both pets must be at least level %d', Config.breeding.minBreedLevel)
+    end
+
+    local now = os.time()
+    local cooldownSec = Config.breeding.breedingCooldownHours * 3600
+    if malePet.metadata.lastBreedTime and (now - malePet.metadata.lastBreedTime) < cooldownSec then
+        return false, 'The male pet is still on breeding cooldown'
+    end
+    if femalePet.metadata.lastBreedTime and (now - femalePet.metadata.lastBreedTime) < cooldownSec then
+        return false, 'The female pet is still on breeding cooldown'
+    end
+
+    -- Generate offspring metadata (pre-computed, claimed later)
+    local offspringMeta = {
+        hash           = generateHash(),
+        name           = randomName(),
+        gender         = math.random(1, 2) == 1,
+        age            = 0,
+        food           = 100,
+        thirst         = 0,
+        owner          = player.PlayerData.charinfo,
+        level          = Config.breeding.offspring.startLevel,
+        XP             = 0,
+        health         = maleCfg.maxHealth,
+        variation      = Variations.getRandom(maleCfg.model),
+        specialization = nil,
+        parents        = { maleHash, femaleHash },
+    }
+
+    MySQL.query(
+        'INSERT INTO murderface_breeding (citizenid, parent1_hash, parent2_hash, offspring_item, offspring_metadata, status) VALUES (?, ?, ?, ?, ?, ?)',
+        { citizenid, maleHash, femaleHash, malePet.name, json.encode(offspringMeta), 'pending' }
+    )
+
+    -- Set breeding cooldown on both parents
+    malePet.metadata.lastBreedTime = now
+    femalePet.metadata.lastBreedTime = now
+    exports.ox_inventory:SetMetadata(src, malePet.slot, malePet.metadata)
+    exports.ox_inventory:SetMetadata(src, femalePet.slot, femalePet.metadata)
+
+    return true
+end)
+
+-- Claim offspring
+lib.callback.register('murderface-pets:server:claimOffspring', function(source)
+    local src = source
+    local player = exports.qbx_core:GetPlayer(src)
+    if not player then return false, 'Player not found' end
+    local citizenid = player.PlayerData.citizenid
+
+    local rows = MySQL.query.await(
+        "SELECT * FROM murderface_breeding WHERE citizenid = ? AND status = 'ready' LIMIT 1",
+        { citizenid }
+    )
+    if not rows or #rows == 0 then
+        return false, 'No puppy ready to claim'
+    end
+
+    local row = rows[1]
+    local offspringMeta = json.decode(row.offspring_metadata)
+
+    -- Update owner to claiming player's current charinfo
+    offspringMeta.owner = player.PlayerData.charinfo
+
+    -- Add offspring item
+    if not exports.ox_inventory:AddItem(src, row.offspring_item, 1) then
+        return false, 'Inventory full'
+    end
+    Wait(200)
+
+    -- Find the newly added uninitialized item and stamp its metadata
+    local items = exports.ox_inventory:GetInventoryItems(src)
+    if items then
+        for _, item in pairs(items) do
+            if item.name == row.offspring_item and (not item.metadata or not item.metadata.hash) then
+                exports.ox_inventory:SetMetadata(src, item.slot, offspringMeta)
+                break
+            end
+        end
+    end
+
+    MySQL.update(
+        "UPDATE murderface_breeding SET status = 'claimed' WHERE id = ?",
+        { row.id }
+    )
+
+    return true, offspringMeta.name
+end)
+
+-- Check breeding status
+lib.callback.register('murderface-pets:server:getBreedingStatus', function(source)
+    local src = source
+    local player = exports.qbx_core:GetPlayer(src)
+    if not player then return nil end
+    local citizenid = player.PlayerData.citizenid
+
+    local rows = MySQL.query.await(
+        "SELECT status, offspring_item, offspring_metadata FROM murderface_breeding WHERE citizenid = ? AND status IN ('pending', 'ready') LIMIT 1",
+        { citizenid }
+    )
+    if not rows or #rows == 0 then return nil end
+
+    local row = rows[1]
+    local meta = json.decode(row.offspring_metadata)
+    local petCfg = Config.petsByItem[row.offspring_item]
+    return {
+        status   = row.status,
+        petName  = meta.name,
+        petLabel = petCfg and petCfg.label or row.offspring_item,
+    }
 end)
 
 -- Rename pet

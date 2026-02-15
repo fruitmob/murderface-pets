@@ -11,7 +11,7 @@ local hashChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz012345678
 
 --- Generate a unique identifier for pet tracking
 ---@return string hash 15-character alphanumeric string
-local function generateHash()
+function generateHash()
     local parts = {}
     for i = 1, 15 do
         local idx = math.random(1, #hashChars)
@@ -39,7 +39,7 @@ local petNames = {
 
 --- Pick a random name for a new pet
 ---@return string
-local function randomName()
+function randomName()
     return petNames[math.random(#petNames)]
 end
 
@@ -116,17 +116,18 @@ function InitPet(src, item)
     if not petCfg then return end
 
     local metadata = {
-        hash      = generateHash(),
-        name      = randomName(),
-        gender    = math.random(1, 2) == 1,
-        age       = 0,
-        food      = 100,
-        thirst    = 0,
-        owner     = player.PlayerData.charinfo,
-        level     = 0,
-        XP        = 0,
-        health    = petCfg.maxHealth,
-        variation = Variations.getRandom(petCfg.model),
+        hash           = generateHash(),
+        name           = randomName(),
+        gender         = math.random(1, 2) == 1,
+        age            = 0,
+        food           = 100,
+        thirst         = 0,
+        owner          = player.PlayerData.charinfo,
+        level          = 0,
+        XP             = 0,
+        health         = petCfg.maxHealth,
+        variation      = Variations.getRandom(petCfg.model),
+        specialization = nil,
     }
 
     exports.ox_inventory:SetMetadata(src, item.slot, metadata)
@@ -179,22 +180,24 @@ RegisterNetEvent('murderface-pets:server:applyCustomization', function(item, pro
             return
         end
 
-        item.metadata.age     = petData.metadata.age
-        item.metadata.food    = petData.metadata.food
-        item.metadata.thirst  = petData.metadata.thirst
-        item.metadata.owner   = player.PlayerData.charinfo
-        item.metadata.level   = petData.metadata.level
-        item.metadata.XP      = petData.metadata.XP
-        item.metadata.health  = petData.metadata.health
+        item.metadata.age            = petData.metadata.age
+        item.metadata.food           = petData.metadata.food
+        item.metadata.thirst         = petData.metadata.thirst
+        item.metadata.owner          = player.PlayerData.charinfo
+        item.metadata.level          = petData.metadata.level
+        item.metadata.XP             = petData.metadata.XP
+        item.metadata.health         = petData.metadata.health
+        item.metadata.specialization = petData.metadata.specialization
     else
         -- Fresh initialization
-        item.metadata.age     = 0
-        item.metadata.food    = 100
-        item.metadata.thirst  = 0
-        item.metadata.owner   = player.PlayerData.charinfo
-        item.metadata.level   = 0
-        item.metadata.XP      = 0
-        item.metadata.health  = petCfg.maxHealth
+        item.metadata.age            = 0
+        item.metadata.food           = 100
+        item.metadata.thirst         = 0
+        item.metadata.owner          = player.PlayerData.charinfo
+        item.metadata.level          = 0
+        item.metadata.XP             = 0
+        item.metadata.health         = petCfg.maxHealth
+        item.metadata.specialization = nil
     end
 
     exports.ox_inventory:SetMetadata(src, serverItem.slot, item.metadata)
@@ -224,7 +227,17 @@ function Update.xp(src, petData)
         petData.metadata.XP = 75
     end
 
-    petData.metadata.XP = petData.metadata.XP + xpPerTick(currentLevel)
+    local gain = xpPerTick(currentLevel)
+
+    -- Companion specialization: bonus passive XP
+    if petData.metadata.specialization == 'companion' then
+        local specCfg = Config.specializations and Config.specializations.companion
+        if specCfg and specCfg.xpBonusMult then
+            gain = math.floor(gain * specCfg.xpBonusMult)
+        end
+    end
+
+    petData.metadata.XP = petData.metadata.XP + gain
 
     local newLevel = levelFromXp(petData.metadata.XP)
     if newLevel > currentLevel then
@@ -269,7 +282,11 @@ function Update.food(petData)
         end
         return
     end
-    petData.metadata.food = math.max(0, petData.metadata.food - bal.decreasePerTick)
+    local drain = bal.decreasePerTick
+    if petData.nearDoghouse and Config.breeding and Config.breeding.restBonus then
+        drain = drain * Config.breeding.restBonus.foodDrainMult
+    end
+    petData.metadata.food = math.max(0, petData.metadata.food - drain)
 end
 
 --- Increase thirst per tick; drain health when dehydrated
@@ -283,7 +300,11 @@ function Update.thirst(petData)
         end
         return
     end
-    petData.metadata.thirst = math.min(100, petData.metadata.thirst + bal.increasePerTick)
+    local increase = bal.increasePerTick
+    if petData.nearDoghouse and Config.breeding and Config.breeding.restBonus then
+        increase = increase * Config.breeding.restBonus.thirstIncreaseMult
+    end
+    petData.metadata.thirst = math.min(100, petData.metadata.thirst + increase)
 end
 
 -- ============================
@@ -297,6 +318,8 @@ local activityCooldownTimes = {
     petting  = 60,
     trick    = 15,
     k9Search = 30,
+    guarding = 60,
+    tracking = 30,
 }
 
 --- Check if a player is on cooldown for a specific XP action.
@@ -384,5 +407,20 @@ function Update.healthRegen(petData)
     local maxHP = petCfg.maxHealth
     if petData.metadata.health >= maxHP then return end
 
-    petData.metadata.health = math.min(maxHP, petData.metadata.health + Config.progression.healthRegenAmount)
+    local regenAmount = Config.progression.healthRegenAmount
+
+    -- Companion specialization: bonus health regen
+    if petData.metadata.specialization == 'companion' then
+        local specCfg = Config.specializations and Config.specializations.companion
+        if specCfg and specCfg.healthRegenMult then
+            regenAmount = regenAmount * specCfg.healthRegenMult
+        end
+    end
+
+    -- Rest bonus: extra regen near dog house
+    if petData.nearDoghouse and Config.breeding and Config.breeding.restBonus then
+        regenAmount = regenAmount + Config.breeding.restBonus.healthRegenBonus
+    end
+
+    petData.metadata.health = math.min(maxHP, petData.metadata.health + regenAmount)
 end

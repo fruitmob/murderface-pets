@@ -50,10 +50,91 @@ Config.leash = {
     speciesAllowed = { 'dog' },
 }
 
+Config.guard = {
+    enabled = true,
+    radius = 10.0,              -- default guard radius in meters
+    checkInterval = 500,        -- ms between enforcement checks
+    attackPlayers = false,      -- true = attack player peds too, false = NPCs only
+    speciesAllowed = { 'dog', 'wild' },
+    notifyOwner = true,
+    combatAbility = 100,
+    combatRange = 2,            -- 0=near, 1=medium, 2=far
+    combatMovement = 3,         -- 0=stationary, 1=defensive, 2=offensive, 3=suicidal
+}
+
 Config.stressRelief = {
     enabled = true,              -- set true if you have a HUD with stress mechanics
     event = 'hud:server:RelieveStress',
     amount = { min = 12, max = 24 },
+}
+
+-- ========================================
+--  Stray / Wild Animal Taming
+-- ========================================
+Config.strays = {
+    enabled = true,
+    trustThreshold = 100,         -- total trust needed to tame
+    trustPerFeed = 20,            -- trust gained per feed
+    feedCooldown = 300,           -- seconds between feeds (per player per stray)
+    feedItem = 'murderface_food', -- item consumed when feeding
+    feedRadius = 3.0,             -- max interaction distance
+    respawnTime = 3600,           -- seconds before stray reappears after being tamed
+
+    spawnPoints = {
+        {
+            id = 'stray_sandy_1',
+            coords = vector4(1690.0, 4785.0, 41.9, 180.0),
+            model = 'A_C_shepherd',
+            item = 'murderface_shepherd',
+            label = 'Stray German Shepherd',
+            spawnChance = 0.6,
+            rareCoat = 'white',
+        },
+        {
+            id = 'stray_paleto_1',
+            coords = vector4(-292.0, 6237.0, 31.5, 90.0),
+            model = 'A_C_Husky',
+            item = 'murderface_husky',
+            label = 'Stray Husky',
+            spawnChance = 0.4,
+            rareCoat = nil,
+        },
+        {
+            id = 'stray_city_1',
+            coords = vector4(200.0, -1660.0, 29.3, 0.0),
+            model = 'A_C_Rottweiler',
+            item = 'murderface_rottweiler',
+            label = 'Stray Rottweiler',
+            spawnChance = 0.3,
+            rareCoat = 'darkBrown',
+        },
+    },
+}
+
+-- ========================================
+--  Breeding / Dog House
+-- ========================================
+Config.breeding = {
+    enabled = true,
+    propModel = 'prop_doghouse_01',       -- GTA V native dog house prop
+    minBreedLevel = 10,                   -- both parents must be at least this level
+    breedingCooldownHours = 24,           -- hours before a pet can breed again (real time)
+    maxDoghousesPerPlayer = 1,            -- only one placed at a time
+    restBonusRadius = 15.0,               -- meters; pets within this get rest bonus
+    placementMaxDistance = 50.0,          -- max raycast distance during placement
+
+    restBonus = {
+        foodDrainMult = 0.5,              -- 50% less food drain
+        thirstIncreaseMult = 0.5,         -- 50% less thirst increase
+        healthRegenBonus = 1.0,           -- bonus HP regen per tick
+    },
+
+    offspring = {
+        inheritSpecialization = false,    -- offspring starts with no specialization
+        startLevel = 0,
+    },
+
+    speciesAllowed = { 'dog' },           -- only dogs can breed (need a dog house)
 }
 
 -- ========================================
@@ -93,6 +174,8 @@ Config.xp = {
     watering   = 15,
     k9Search   = 40,
     healing    = 10,
+    guarding   = 5,
+    tracking   = 30,
 }
 
 -- ========================================
@@ -108,6 +191,8 @@ Config.progression = {
         { minLevel = 15, speed = 4.0 },
         { minLevel = 30, speed = 5.0 },
     },
+    minGuardLevel          = 10,
+    minSpecializationLevel = 20,
     milestones = { 10, 25, 50 },
 }
 
@@ -124,6 +209,39 @@ Config.levelTitles = {
     { maxLevel = 30, title = 'Veteran' },
     { maxLevel = 49, title = 'Elite' },
     { maxLevel = 50, title = 'Legendary' },
+}
+
+-- ========================================
+--  Specializations
+--  Unlocked at Config.progression.minSpecializationLevel.
+--  Each path modifies existing systems via multipliers.
+-- ========================================
+Config.specializations = {
+    guardian = {
+        label = 'Guardian',
+        icon = 'shield-halved',
+        iconColor = '#e03131',
+        description = 'Larger guard radius, enhanced combat ability.',
+        guardRadiusMult = 1.5,       -- 50% larger guard radius
+        combatAbilityBonus = 50,     -- added to base combat ability
+    },
+    tracker = {
+        label = 'Tracker',
+        icon = 'location-crosshairs',
+        iconColor = '#228be6',
+        description = 'Detect and highlight nearby peds and animals.',
+        trackRadius = 50.0,          -- detection range in meters
+        markerDuration = 10000,      -- ms markers stay visible
+    },
+    companion = {
+        label = 'Companion',
+        icon = 'heart',
+        iconColor = '#e64980',
+        description = 'Better stress relief, faster regen, bonus XP.',
+        stressReliefMult = 2.0,      -- 2x stress relief
+        healthRegenMult = 2.0,       -- 2x health regen rate
+        xpBonusMult = 1.25,          -- 25% bonus passive XP
+    },
 }
 
 -- ========================================
@@ -647,6 +765,10 @@ Config.items = {
         maxCapacity = 10,         -- max water units in one bottle
         refillCost = 2,           -- water units consumed per drink
     },
+    doghouse = {
+        name = 'murderface_doghouse',
+        duration = 3,             -- seconds for placement progress bar
+    },
 }
 
 -- ========================================
@@ -742,5 +864,6 @@ Config.suppliesShop = {
         { name = 'murderface_collar',      label = 'Pet Collar',            price = 250 },
         { name = 'murderface_nametag',     label = 'Name Tag',              price = 150 },
         { name = 'murderface_groomingkit', label = 'Grooming Kit',          price = 750 },
+        { name = 'murderface_doghouse',   label = 'Dog House',             price = 5000 },
     },
 }

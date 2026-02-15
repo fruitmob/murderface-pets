@@ -2,7 +2,7 @@
 
 **A free, open-source pet companion system for FiveM — built on the Qbox/ox stack.**
 
-Most pet scripts on Tebex charge $15–$30 for a fraction of what this does. murderface-pets gives you 27 animals (16 vanilla + 11 addon), a full XP and progression system, K9 police functionality, hunting, leash system, tricks, grooming, and more — all config-driven, all free.
+Most pet scripts on Tebex charge $15–$30 for a fraction of what this does. murderface-pets gives you 27 animals (16 vanilla + 11 addon), a full XP and progression system, K9 police functionality, hunting, leash system, guard mode, specializations, stray taming, breeding, and more — all config-driven, all free.
 
 ## Why This Script
 
@@ -60,6 +60,7 @@ Real-time XP display in the View Stats panel — no need to despawn/respawn to c
 - **Tricks** — sit, beg, shake paw, play dead (level-gated, per-trick unlock)
 - **Auto vehicle enter/exit** — pet hops in when you get in a car, hops out when you leave
 - **Leash system** — rope-based visual leash for dogs, enforces distance, syncs across clients, auto-detaches on vehicle entry/death/despawn
+- **Guard mode** — pet holds position and attacks intruding NPCs (optionally players), owner gets notified
 - **Pet name overhead** — 3D floating name and level title above each active pet
 - **Pet emotes** — `/petemote` command with moods, vocalizations, and animations
 
@@ -72,6 +73,44 @@ K9-eligible breeds (German Shepherd, Rottweiler) can be used by officers to:
 - **Search vehicles** for drugs and paraphernalia
 
 Requires a configurable job (default: `police`) and level 10+.
+
+### Guard Mode
+Set your pet to guard a location. The pet holds position and attacks any NPC (optionally player peds) that enters the configurable guard radius. The owner receives a notification when intruders are detected. Recall the pet to resume following.
+
+- Level 10+ required, dogs and wild species only
+- Combat attributes fully configurable (ability, range, movement)
+- Can't guard while leashed; can't hunt while guarding
+- Auto-stops on vehicle entry, pet death, despawn, or logout
+
+### Specialization System
+At level 20, pets unlock a permanent one-time specialization choice:
+
+| Specialization | Effect |
+|----------------|--------|
+| **Guardian** | 1.5x guard radius, +50 combat ability |
+| **Tracker** | "Track Nearby" action detects peds within 50m, draws markers for 10s |
+| **Companion** | 2x stress relief, 2x health regen, 1.25x XP gain |
+
+Choice is confirmed with a dialog ("This is permanent!"), stored in metadata, and displayed in View Stats.
+
+### Stray/Wild Pet Taming
+Config-driven stray animal spawn points in the world. Players feed strays repeatedly to build trust (stored in MySQL). At full trust, the stray converts into a pet item — some with rare coat variants only obtainable through taming.
+
+- 3 initial stray locations (Sandy Shores, Paleto Bay, City) — add more in config
+- Feed cooldown prevents spam (default 5 minutes between feeds per stray)
+- Proximity-based spawning (100m in / 150m out) keeps entity count low
+- Spawn chance roll + respawn timer after taming (default 1 hour)
+
+### Breeding System
+Players buy a Dog House from the supply shop, place it as a prop in the world, and breed matching pets at it.
+
+- **Same-model breeding** — Husky + Husky, not Husky + Rottweiler
+- **Requires** opposite gender, both level 10+, 24-hour real-time cooldown per parent
+- **Gestation = next server restart** — offspring status promoted from pending to ready on resource start
+- **Offspring** get a random name, gender, and coat variation; level 0, fresh stats, parent lineage tracked
+- **Dog house rest bonus** — pets within 15m get 50% less food/thirst drain + bonus HP regen
+- **Placeable prop** — interactive placement with ghost preview, rotation controls, ground snapping
+- 1 dog house per player, persisted in MySQL, pick up to relocate
 
 ### Care System
 - **Hunger** drains over time — feed with pet food items
@@ -327,6 +366,14 @@ Open `ox_inventory/data/items.lua` and paste the following block inside the `ret
 		description = 'Change your pet\'s coat and appearance',
 		server = { export = 'murderface-pets.murderface_groomingkit' },
 	},
+
+	['murderface_doghouse'] = {
+		label = 'Dog House',
+		weight = 5000,
+		consume = 0,
+		description = 'A placeable dog house for pet breeding and resting',
+		server = { export = 'murderface-pets.murderface_doghouse' },
+	},
 ```
 
 ### 3. Inventory images
@@ -366,6 +413,10 @@ All settings are in `config.lua` with inline comments. Everything is tunable wit
 | `Config.suppliesShop` | Supply shop NPC model, coords, blip settings |
 | `Config.stressRelief` | Stress reduction from petting (for HUD scripts) |
 | `Config.leash` | Leash length, rope type, allowed species |
+| `Config.guard` | Guard radius, check interval, player targeting, species |
+| `Config.specializations` | Guardian/Tracker/Companion multipliers and thresholds |
+| `Config.strays` | Stray spawn points, trust threshold, feed cooldown, rare coats |
+| `Config.breeding` | Breed level, cooldown, rest bonus, placement distance, species |
 | `Config.nameTag` | Overhead pet name display settings |
 | `Config.petEmotes` | Emote definitions for `/petemote` command |
 | `Config.blip` | Map blip settings for active pets |
@@ -432,9 +483,12 @@ murderface-pets/
 │   ├── functions.lua       -- XP, cooldowns, pet init helpers
 │   └── server.lua          -- Pet class, events, callbacks, DB layer
 ├── client/
-│   ├── functions.lua       -- Spawn helpers, attack/hunt/K9 logic
+│   ├── functions.lua       -- Spawn helpers, attack/hunt/K9/tracker logic
 │   ├── client.lua          -- ActivePed tracking, core interactions
 │   ├── leash.lua           -- Rope-based leash system + network sync
+│   ├── guard.lua           -- Guard mode enforcement + combat
+│   ├── strays.lua          -- Stray taming proximity spawning
+│   ├── doghouse.lua        -- Placeable dog house + breeding menu
 │   └── menu.lua            -- Context menus (ox_lib)
 └── inventory_images/       -- Item icons for ox_inventory
 ```

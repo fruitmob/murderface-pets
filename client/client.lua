@@ -45,6 +45,8 @@ function ActivePed:remove(hash)
     local petData = self.pets[hash]
     if not petData then return end
 
+    StopGuard(hash)
+
     local netId = NetworkGetNetworkIdFromEntity(petData.entity)
     if netId then
         TriggerServerEvent('murderface-pets:server:deleteEntity', netId)
@@ -231,6 +233,22 @@ RegisterNetEvent('murderface-pets:client:spawnPet', function(modelName, hostileT
                 local currentXP = md.XP or 0
                 local nextLevelXP = Config.xpForLevel(level + 1)
 
+                local statsMeta = {
+                    { label = 'Level', value = string.format('%d (%s)', level, title) },
+                    { label = 'XP', value = string.format('%d / %d', currentXP, nextLevelXP) },
+                    { label = 'Health', value = ('%d / %d'):format(math.max(0, currentHP), maxHP) },
+                    { label = 'Food', value = ('%.0f%%'):format(md.food or 0) },
+                    { label = 'Thirst', value = ('%.0f%%'):format(md.thirst or 0) },
+                }
+
+                if md.specialization and Config.specializations then
+                    local specCfg = Config.specializations[md.specialization]
+                    statsMeta[#statsMeta + 1] = {
+                        label = 'Specialization',
+                        value = specCfg and specCfg.label or md.specialization,
+                    }
+                end
+
                 lib.registerContext({
                     id = 'mfpets_stats_view',
                     title = (md.name or 'Pet') .. ' — Stats',
@@ -242,13 +260,7 @@ RegisterNetEvent('murderface-pets:client:spawnPet', function(modelName, hostileT
                             description = string.format('%s — %s',
                                 cfg and cfg.species:gsub('^%l', string.upper) or '',
                                 title),
-                            metadata = {
-                                { label = 'Level', value = string.format('%d (%s)', level, title) },
-                                { label = 'XP', value = string.format('%d / %d', currentXP, nextLevelXP) },
-                                { label = 'Health', value = ('%d / %d'):format(math.max(0, currentHP), maxHP) },
-                                { label = 'Food', value = ('%.0f%%'):format(md.food or 0) },
-                                { label = 'Thirst', value = ('%.0f%%'):format(md.thirst or 0) },
-                            },
+                            metadata = statsMeta,
                         },
                     },
                 })
@@ -425,6 +437,7 @@ function createActivePetThread(ped, item)
 
             -- Pet has died — keep dead until revived/despawned
             if IsPedDeadOrDying(savedData.entity, true) then
+                StopGuard(savedData.item.metadata.hash)
                 DetachLeash(savedData.item.metadata.hash)
                 local c_health = GetEntityHealth(savedData.entity)
                 if c_health <= 100 then
@@ -471,6 +484,7 @@ end)
 -- ============================
 
 RegisterNetEvent('murderface-pets:client:despawnPet', function(hash, instant)
+    StopGuard(hash)
     DetachLeash(hash)
     if instant then
         ActivePed:remove(hash)
@@ -499,6 +513,7 @@ end)
 -- ============================
 
 RegisterNetEvent('qbx_core:client:onLogout', function()
+    StopAllGuards()
     DetachAllLeashes()
     ActivePed:removeAll()
 end)
@@ -766,8 +781,12 @@ CreateThread(function()
         if activePet then
             local petPed = activePet.entity
             if inVehicle and not wasInVehicle then
-                -- Auto-detach leash when entering a vehicle
+                -- Auto-stop guard and detach leash when entering a vehicle
                 local hash = activePet.item.metadata.hash
+                if IsGuarding(hash) then
+                    StopGuard(hash)
+                    lib.notify({ description = 'Guard mode ended (vehicle)', type = 'info', duration = 3000 })
+                end
                 if IsLeashed(hash) then
                     DetachLeash(hash)
                     lib.notify({ description = 'Leash auto-removed (vehicle)', type = 'info', duration = 3000 })

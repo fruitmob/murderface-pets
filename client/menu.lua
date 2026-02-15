@@ -14,6 +14,7 @@ local supplyIcons = {
     murderface_collar      = { icon = 'ring',         iconColor = '#fab005', desc = 'Transfer pet ownership' },
     murderface_nametag     = { icon = 'tag',          iconColor = '#fab005', desc = 'Give your pet a new name' },
     murderface_groomingkit = { icon = 'scissors',     iconColor = '#e64980', desc = 'Change appearance' },
+    murderface_doghouse   = { icon = 'house-chimney', iconColor = '#e8590c', desc = 'Place for breeding & pet rest' },
 }
 
 -- =======================================
@@ -42,7 +43,8 @@ local menu = {
         triggerNotification = { 'PETNAME is now hunting!', 'PETNAME can not do that!' },
         show = function(activePed)
             if not activePed.canHunt then return false end
-            if IsLeashed(activePed.item.metadata.hash) then return false end
+            local hash = activePed.item.metadata.hash
+            if IsLeashed(hash) or IsGuarding(hash) then return false end
             return (activePed.item.metadata.level or 0) >= Config.progression.minHuntLevel
         end,
         action = function(_, activePed)
@@ -77,7 +79,8 @@ local menu = {
         description = 'Hunt and bring the prey to you',
         show = function(activePed)
             if not activePed.canHunt then return false end
-            if IsLeashed(activePed.item.metadata.hash) then return false end
+            local hash = activePed.item.metadata.hash
+            if IsLeashed(hash) or IsGuarding(hash) then return false end
             return (activePed.item.metadata.level or 0) >= Config.progression.minHuntLevel
         end,
         action = function(plyped, activePed)
@@ -107,7 +110,8 @@ local menu = {
         iconColor = '#12b886',
         description = 'Point where your pet should go',
         show = function(activePed)
-            return not IsLeashed(activePed.item.metadata.hash)
+            local hash = activePed.item.metadata.hash
+            return not IsLeashed(hash) and not IsGuarding(hash)
         end,
         action = function(_, activePed)
             doSomethingIfPedIsInsideVehicle(activePed.entity)
@@ -126,6 +130,50 @@ local menu = {
         end
     },
     {
+        label = Lang:t('menu.action_menu.guard'),
+        TYPE = 'Guard',
+        icon = 'shield-halved',
+        iconColor = '#e03131',
+        description = 'Guard the current position',
+        triggerNotification = { 'PETNAME is now guarding!', 'PETNAME cannot guard here!' },
+        show = function(activePed)
+            if not Config.guard or not Config.guard.enabled then return false end
+            if IsLeashed(activePed.item.metadata.hash) then return false end
+            if IsGuarding(activePed.item.metadata.hash) then return false end
+            local species = activePed.petConfig and activePed.petConfig.species
+            if not species then return false end
+            for _, s in ipairs(Config.guard.speciesAllowed) do
+                if species == s then
+                    return (activePed.item.metadata.level or 0) >= Config.progression.minGuardLevel
+                end
+            end
+            return false
+        end,
+        action = function(_, activePed)
+            if IsLeashed(activePed.item.metadata.hash) then
+                lib.notify({ description = Lang:t('menu.action_menu.error.cannot_guard_leashed'), type = 'error', duration = 5000 })
+                return false
+            end
+            StartGuard(activePed)
+            return true
+        end,
+    },
+    {
+        label = Lang:t('menu.action_menu.recall_guard'),
+        TYPE = 'RecallGuard',
+        icon = 'arrow-rotate-left',
+        iconColor = '#e03131',
+        description = 'Stop guarding and return',
+        triggerNotification = { 'PETNAME stopped guarding!', 'PETNAME is not guarding!' },
+        show = function(activePed)
+            return IsGuarding(activePed.item.metadata.hash)
+        end,
+        action = function(_, activePed)
+            StopGuard(activePed.item.metadata.hash)
+            return true
+        end,
+    },
+    {
         label = Lang:t('menu.action_menu.get_in_car'),
         TYPE = 'GetinCar',
         icon = 'car-side',
@@ -134,6 +182,37 @@ local menu = {
         action = function()
             getIntoCar()
         end
+    },
+    {
+        label = Lang:t('menu.action_menu.specialize'),
+        TYPE = 'Specialize',
+        icon = 'star',
+        iconColor = '#fab005',
+        description = 'Choose a specialization path',
+        show = function(activePed)
+            if not Config.specializations then return false end
+            if activePed.item.metadata.specialization then return false end
+            return (activePed.item.metadata.level or 0) >= Config.progression.minSpecializationLevel
+        end,
+        action = function(_, activePed)
+            openSpecializationMenu(activePed)
+            return true
+        end,
+    },
+    {
+        label = Lang:t('menu.action_menu.track'),
+        TYPE = 'Track',
+        icon = 'location-crosshairs',
+        iconColor = '#228be6',
+        description = 'Detect nearby peds and animals',
+        triggerNotification = { 'PETNAME is scanning the area!', 'PETNAME cannot track!' },
+        show = function(activePed)
+            return activePed.item.metadata.specialization == 'tracker'
+        end,
+        action = function(_, activePed)
+            TrackerScan(activePed)
+            return true
+        end,
     },
     {
         label = 'Search Person',
@@ -261,8 +340,15 @@ local menu = {
                 activePed.item.metadata.hash, { key = 'activity', action = 'petting' })
 
             if Config.stressRelief.enabled then
-                TriggerServerEvent(Config.stressRelief.event,
-                    math.random(Config.stressRelief.amount.min, Config.stressRelief.amount.max))
+                local amount = math.random(Config.stressRelief.amount.min, Config.stressRelief.amount.max)
+                -- Companion specialization: bonus stress relief
+                if activePed.item.metadata.specialization == 'companion' then
+                    local specCfg = Config.specializations and Config.specializations.companion
+                    if specCfg and specCfg.stressReliefMult then
+                        amount = math.floor(amount * specCfg.stressReliefMult)
+                    end
+                end
+                TriggerServerEvent(Config.stressRelief.event, amount)
             end
             return true
         end,
@@ -314,6 +400,54 @@ local openMenu_variation_list
 -- =======================================
 --       ox_lib Context Menu Functions
 -- =======================================
+
+-- =======================================
+--     Specialization Picker Menu
+-- =======================================
+
+function openSpecializationMenu(activePed)
+    local options = {}
+    for specKey, spec in pairs(Config.specializations) do
+        options[#options + 1] = {
+            title = spec.label,
+            description = spec.description,
+            icon = spec.icon,
+            iconColor = spec.iconColor,
+            onSelect = function()
+                local confirm = lib.alertDialog({
+                    header = 'Choose ' .. spec.label .. '?',
+                    content = spec.description .. '\n\nThis choice is **permanent** and cannot be changed!',
+                    centered = true,
+                    cancel = true,
+                })
+                if confirm ~= 'confirm' then return end
+
+                local success, result = lib.callback.await(
+                    'murderface-pets:server:chooseSpecialization', false,
+                    activePed.item.metadata.hash, specKey)
+                if success then
+                    activePed.item.metadata.specialization = result
+                    lib.notify({
+                        title = 'Specialization Chosen!',
+                        description = (activePed.item.metadata.name or 'Pet') .. ' is now a ' .. spec.label .. '!',
+                        type = 'success',
+                        duration = 10000,
+                    })
+                else
+                    lib.notify({ description = result or 'Failed', type = 'error', duration = 5000 })
+                end
+            end,
+        }
+    end
+
+    lib.registerContext({
+        id = 'mfpets_specialization',
+        title = 'Choose Specialization',
+        menu = 'mfpets_actions',
+        options = options,
+    })
+    lib.showContext('mfpets_specialization')
+end
 
 local function registerTricksMenu(pet)
     local trickItems = buildTrickItems(pet)

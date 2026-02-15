@@ -19,6 +19,9 @@ client_scripts {
     'client/functions.lua',
     'client/client.lua',
     'client/leash.lua',
+    'client/guard.lua',
+    'client/strays.lua',
+    'client/doghouse.lua',
     'client/menu.lua',
 }
 
