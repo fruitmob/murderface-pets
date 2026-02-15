@@ -178,6 +178,16 @@ Config.xp = {
     tracking   = 30,
 }
 
+-- Seconds between XP awards for the same activity (prevents spam)
+Config.activityCooldowns = {
+    huntKill = 30,
+    petting  = 60,
+    trick    = 15,
+    k9Search = 30,
+    guarding = 60,
+    tracking = 30,
+}
+
 -- ========================================
 --  Progression / Level-Gated Unlocks
 -- ========================================
@@ -480,7 +490,7 @@ Config.pets = {
         model    = 'A_C_Hen',
         item     = 'murderface_hen',
         label    = 'Chicken',
-        maxHealth = 100,
+        maxHealth = 200,
         price    = 500,
         canHunt  = false,
         isK9     = false,
@@ -495,7 +505,7 @@ Config.pets = {
         model    = 'A_C_Rabbit_01',
         item     = 'murderface_rabbit',
         label    = 'Rabbit',
-        maxHealth = 100,
+        maxHealth = 200,
         price    = 1000,
         canHunt  = false,
         isK9     = false,

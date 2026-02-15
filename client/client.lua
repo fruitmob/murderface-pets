@@ -409,7 +409,6 @@ end
 
 function createActivePetThread(ped, item)
     local count = Config.dataUpdateInterval
-    local plyPed = PlayerPedId()
 
     CreateThread(function()
         local tmpcount = 0
@@ -420,6 +419,7 @@ function createActivePetThread(ped, item)
         local timeOut = { 0, lastAction = nil }
 
         while DoesEntityExist(ped) and not finished do
+            local plyPed = PlayerPedId() -- refresh each tick; handle changes on death/respawn
             afkWandering(timeOut, plyPed, ped, savedData.animClass)
 
             -- Update server every N seconds

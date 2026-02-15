@@ -64,6 +64,8 @@ local function startGuardThread(petEntity, hash, guardPos, activePed)
         TaskGuardCurrentPosition(petEntity, radius, radius, true)
 
         notifiedPeds[hash] = {}
+        local currentInterval = cfg.checkInterval  -- O5: adaptive scan interval
+        local maxInterval = cfg.checkInterval * 4   -- cap at 4x base interval
 
         while guardState[hash] and guardState[hash].active
               and DoesEntityExist(petEntity)
@@ -71,6 +73,7 @@ local function startGuardThread(petEntity, hash, guardPos, activePed)
 
             local pedPool = GetGamePool('CPed')
             playerPed = PlayerPedId()
+            local foundIntruder = false
 
             for _, ped in ipairs(pedPool) do
                 -- Skip self and owner
@@ -87,6 +90,9 @@ local function startGuardThread(petEntity, hash, guardPos, activePed)
                     local dist = #(guardPos - pedPos)
 
                     if dist <= radius then
+                        foundIntruder = true
+                        currentInterval = cfg.checkInterval -- reset to base on combat
+
                         -- Attack intruder
                         TaskCombatPed(petEntity, ped, 0, 16)
 
@@ -130,7 +136,12 @@ local function startGuardThread(petEntity, hash, guardPos, activePed)
                 end
             end
 
-            Wait(cfg.checkInterval)
+            -- O5: No intruders found — ramp up interval to reduce idle CPU cost
+            if not foundIntruder then
+                currentInterval = math.min(currentInterval * 2, maxInterval)
+            end
+
+            Wait(currentInterval)
         end
 
         -- Cleanup

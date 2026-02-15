@@ -9,6 +9,12 @@ local SAVE_INTERVAL = 5000
 local MAX_AGE = 60 * 60 * 24 * 10 -- 10 days of active time
 local pendingSpawns = {} -- { [src] = { [hash] = os.time() } } race-condition guard
 
+-- O4: Pre-build Set for O(1) K9 illegal item lookups
+local illegalItemSet = {}
+for _, name in ipairs(Config.k9.illegalItems) do
+    illegalItemSet[name] = true
+end
+
 local function round(n, decimals)
     local mult = 10 ^ (decimals or 0)
     return math.floor(n * mult + 0.5) / mult
@@ -147,6 +153,8 @@ function Pet:setAsSpawned(src, data)
         itemName  = data.item.name,
         metadata  = metadata,
         citizenid = player and player.PlayerData.citizenid or nil,
+        dirty     = false,           -- O1: only write when metadata changed
+        slotCache = data.item.slot,  -- O1: cache slot to avoid findSlotByHash scans
     }
     return true
 end
@@ -260,27 +268,55 @@ function Pet:saveData(src, hash, silent, processStats)
             Update.food(petData)
             Update.thirst(petData)
             Update.healthRegen(petData)
+            petData.dirty = true -- stat processing always mutates values
 
-            -- Sync food/thirst to client so View Stats is accurate
-            TriggerClientEvent('murderface-pets:client:syncStats', src, hash, {
-                food = petData.metadata.food,
-                thirst = petData.metadata.thirst,
-            })
+            -- O2: Only sync food/thirst to client when values actually changed
+            local newFood = round(petData.metadata.food, 1)
+            local newThirst = round(petData.metadata.thirst, 1)
+            if not silent
+               and (math.abs(newFood - (petData._lastSyncFood or -1)) >= 0.5
+                    or math.abs(newThirst - (petData._lastSyncThirst or -1)) >= 0.5) then
+                petData._lastSyncFood = newFood
+                petData._lastSyncThirst = newThirst
+                TriggerClientEvent('murderface-pets:client:syncStats', src, hash, {
+                    food = petData.metadata.food,
+                    thirst = petData.metadata.thirst,
+                })
+            end
         else
             petData.metadata.health = 0
+            petData.dirty = true
             if not silent then
                 TriggerClientEvent('murderface-pets:client:forceKill', src, hash, 'hunger')
             end
         end
     end
 
+    -- O1: Only write to inventory + DB when metadata actually changed
+    if not petData.dirty then return end
+    petData.dirty = false
+
     -- Round floating-point values
     petData.metadata.health = round(petData.metadata.health, 2)
     petData.metadata.thirst = round(petData.metadata.thirst, 2)
     petData.metadata.food   = round(petData.metadata.food, 2)
 
-    -- Save to ox_inventory
-    local slot = findSlotByHash(src, petData.itemName, hash)
+    -- O1: Use cached slot, fallback to full scan if stale
+    local slot = petData.slotCache
+    if slot then
+        local items = exports.ox_inventory:GetInventoryItems(src)
+        if items then
+            local slotItem = items[slot]
+            if not slotItem or not slotItem.metadata or slotItem.metadata.hash ~= hash then
+                slot = findSlotByHash(src, petData.itemName, hash)
+                petData.slotCache = slot
+            end
+        end
+    else
+        slot = findSlotByHash(src, petData.itemName, hash)
+        petData.slotCache = slot
+    end
+
     if slot then
         exports.ox_inventory:SetMetadata(src, slot, petData.metadata)
     end
@@ -295,7 +331,8 @@ end
 ---@param src number Player source
 function Pet:cleanup(src)
     if not self.players[src] then return end
-    for hash in pairs(self.players[src]) do
+    for hash, petData in pairs(self.players[src]) do
+        petData.dirty = true -- always persist on disconnect
         self:saveData(src, hash, true)
     end
     self.players[src] = nil
@@ -353,15 +390,19 @@ end)
 ---@param inventory table Full inventory object (has .id, .items)
 ---@param slot number Slot number
 local function handlePetItem(event, item, inventory, slot)
-    print(('[murderface-pets] ^3handlePetItem called^0: event=%s item=%s slot=%s'):format(
-        tostring(event), tostring(item and item.name or 'nil'), tostring(slot)))
+    if Config.debug then
+        print(('[murderface-pets] ^3handlePetItem called^0: event=%s item=%s slot=%s'):format(
+            tostring(event), tostring(item and item.name or 'nil'), tostring(slot)))
+    end
 
     if event ~= 'usingItem' then return end
 
     local src = inventory.id
     local petCfg = Config.petsByItem[item.name]
     if not petCfg then
-        print(('[murderface-pets] ^1petCfg NOT FOUND^0 for item.name=%s'):format(tostring(item.name)))
+        if Config.debug then
+            print(('[murderface-pets] ^1petCfg NOT FOUND^0 for item.name=%s'):format(tostring(item.name)))
+        end
         return false
     end
 
@@ -370,7 +411,9 @@ local function handlePetItem(event, item, inventory, slot)
 
     -- First use: initialize if no hash
     if type(metadata) ~= 'table' or not metadata.hash then
-        print(('[murderface-pets] ^2Initializing new pet^0: %s for player %s'):format(item.name, src))
+        if Config.debug then
+            print(('[murderface-pets] ^2Initializing new pet^0: %s for player %s'):format(item.name, src))
+        end
         InitPet(src, { name = item.name, slot = slot, metadata = metadata })
         TriggerClientEvent('ox_lib:notify', src, {
             description = Lang:t('success.pet_initialization_was_successful'),
@@ -389,7 +432,9 @@ local function handlePetItem(event, item, inventory, slot)
         return false
     end
 
-    print(('[murderface-pets] ^2Spawning pet^0: model=%s hash=%s'):format(petCfg.model, metadata.hash))
+    if Config.debug then
+        print(('[murderface-pets] ^2Spawning pet^0: model=%s hash=%s'):format(petCfg.model, metadata.hash))
+    end
     Pet:spawnPet(src, petCfg.model, { name = item.name, slot = slot, metadata = metadata })
     return false
 end
@@ -489,9 +534,12 @@ RegisterNetEvent('murderface-pets:server:feedPet', function(hash)
     if not petData then return end
 
     petData.metadata.food = math.min(100, petData.metadata.food + Config.balance.food.feedAmount)
+    petData.dirty = true -- O1: mark dirty after mutation
     Update.xpAward(src, petData, Config.xp.feeding)
 
     -- Sync updated food to client
+    petData._lastSyncFood = petData.metadata.food
+    petData._lastSyncThirst = petData.metadata.thirst
     TriggerClientEvent('murderface-pets:client:syncStats', src, hash, {
         food = petData.metadata.food,
         thirst = petData.metadata.thirst,
@@ -503,7 +551,7 @@ RegisterNetEvent('murderface-pets:server:feedPet', function(hash)
 end)
 
 -- Heal or revive pet
-RegisterNetEvent('murderface-pets:server:healPet', function(hash, model, processType)
+RegisterNetEvent('murderface-pets:server:healPet', function(hash, _model, processType)
     local src = source
     if not hash then return end
 
@@ -516,7 +564,8 @@ RegisterNetEvent('murderface-pets:server:healPet', function(hash, model, process
         return
     end
 
-    local petCfg = Config.petsByModel[model]
+    -- S2: Use server-stored item name for config lookup instead of client-supplied model
+    local petCfg = Config.petsByItem[petData.itemName]
     if not petCfg then return end
 
     local maxHP = petCfg.maxHealth
@@ -542,6 +591,7 @@ RegisterNetEvent('murderface-pets:server:healPet', function(hash, model, process
 
     if processType == 'Heal' then
         petData.metadata.health = math.min(maxHP, petData.metadata.health + healAmount)
+        petData.dirty = true -- O1
         Update.xpAward(src, petData, Config.xp.healing)
         Pet:saveData(src, hash)
         local msg = string.format(Lang:t('success.healing_was_successful'), petData.metadata.health, maxHP)
@@ -550,6 +600,7 @@ RegisterNetEvent('murderface-pets:server:healPet', function(hash, model, process
     else
         -- Revive
         petData.metadata.health = 100 + Config.items.firstaid.reviveBonus
+        petData.dirty = true -- O1
         Pet:saveData(src, hash)
         Pet:despawnPet(src, hash, true)
         local msg = string.format(Lang:t('success.successful_revive'), petData.metadata.name)
@@ -570,13 +621,16 @@ RegisterNetEvent('murderface-pets:server:updatePetStats', function(hash, data)
 
     if data.key == 'XP' then
         Update.xp(src, petData)
+        petData.dirty = true -- O1
     elseif data.key == 'activity' then
         local amount = Config.xp[data.action]
         if amount and not IsOnActivityCooldown(src, data.action) then
             Update.xpAward(src, petData, amount)
+            petData.dirty = true -- O1
         end
     else
         Update.health(src, data, petData)
+        petData.dirty = true -- O1
     end
 end)
 
@@ -651,6 +705,10 @@ RegisterNetEvent('murderface-pets:server:onLogout', function(hashes)
     local src = source
     if type(hashes) == 'table' then
         for _, hash in pairs(hashes) do
+            local petData = Pet:findByHash(src, hash)
+            if petData then
+                petData.dirty = true -- always persist on logout
+            end
             Pet:saveData(src, hash)
             Pet:setAsDespawned(src, hash)
         end
@@ -710,9 +768,12 @@ lib.callback.register('murderface-pets:server:decreaseThirst', function(source, 
     -- Reduce pet thirst
     local reduction = Config.balance.thirst.reductionPerDrink
     petData.metadata.thirst = math.max(0, petData.metadata.thirst - reduction)
+    petData.dirty = true -- O1
     Update.xpAward(src, petData, Config.xp.watering)
 
     -- Sync updated thirst to client
+    petData._lastSyncFood = petData.metadata.food
+    petData._lastSyncThirst = petData.metadata.thirst
     TriggerClientEvent('murderface-pets:client:syncStats', src, hash, {
         food = petData.metadata.food,
         thirst = petData.metadata.thirst,
@@ -725,12 +786,15 @@ lib.callback.register('murderface-pets:server:decreaseThirst', function(source, 
 end)
 
 -- K9: Search player inventory for illegal items
+-- O4: Single GetInventoryItems call + O(1) Set lookup instead of 50+ GetItemCount exports
 lib.callback.register('murderface-pets:server:searchInventory', function(source, targetId)
     local src = source
-    for _, itemName in ipairs(Config.k9.illegalItems) do
-        local count = exports.ox_inventory:GetItemCount(targetId, itemName)
-        if count and count > 0 then
-            return true
+    local items = exports.ox_inventory:GetInventoryItems(targetId)
+    if items then
+        for _, item in pairs(items) do
+            if illegalItemSet[item.name] then
+                return true
+            end
         end
     end
     TriggerClientEvent('ox_lib:notify', src, {
@@ -741,6 +805,7 @@ lib.callback.register('murderface-pets:server:searchInventory', function(source,
 end)
 
 -- K9: Search vehicle stash for illegal items
+-- O4: O(1) Set lookup instead of O(n*m) nested loop
 lib.callback.register('murderface-pets:server:searchVehicle', function(source, data)
     local src = source
     local stashId = data.key == 1 and ('gloveV' .. data.plate) or ('trunkV' .. data.plate)
@@ -748,14 +813,12 @@ lib.callback.register('murderface-pets:server:searchVehicle', function(source, d
 
     if stashItems then
         for _, item in pairs(stashItems) do
-            for _, illegal in ipairs(Config.k9.illegalItems) do
-                if item.name == illegal then
-                    TriggerClientEvent('ox_lib:notify', src, {
-                        description = 'K9 found something!',
-                        type = 'success'
-                    })
-                    return true
-                end
+            if illegalItemSet[item.name] then
+                TriggerClientEvent('ox_lib:notify', src, {
+                    description = 'K9 found something!',
+                    type = 'success'
+                })
+                return true
             end
         end
     end
@@ -790,6 +853,7 @@ lib.callback.register('murderface-pets:server:chooseSpecialization', function(so
     end
 
     petData.metadata.specialization = specName
+    petData.dirty = true -- O1
     Pet:saveData(src, hash)
     return true, specName
 end)
@@ -849,24 +913,19 @@ lib.callback.register('murderface-pets:server:feedStray', function(source, stray
         strayTimers[strayId] = nil
     end
 
-    -- Check feed cooldown from DB
+    -- B5: Check trust + feed cooldown in a single DB query
     local rows = MySQL.query.await(
-        'SELECT trust, last_fed FROM murderface_stray_trust WHERE citizenid = ? AND stray_id = ?',
+        'SELECT trust, TIMESTAMPDIFF(SECOND, last_fed, NOW()) AS cooldown_elapsed FROM murderface_stray_trust WHERE citizenid = ? AND stray_id = ?',
         { citizenid, strayId }
     )
 
     local currentTrust = 0
     if rows and #rows > 0 then
         currentTrust = rows[1].trust
-        if rows[1].last_fed then
-            local cdCheck = MySQL.scalar.await(
-                'SELECT TIMESTAMPDIFF(SECOND, last_fed, NOW()) FROM murderface_stray_trust WHERE citizenid = ? AND stray_id = ?',
-                { citizenid, strayId }
-            )
-            if cdCheck and cdCheck < Config.strays.feedCooldown then
-                local remaining = Config.strays.feedCooldown - cdCheck
-                return false, string.format('Come back in %d minutes', math.ceil(remaining / 60))
-            end
+        local elapsed = rows[1].cooldown_elapsed
+        if elapsed and elapsed < Config.strays.feedCooldown then
+            local remaining = Config.strays.feedCooldown - elapsed
+            return false, string.format('Come back in %d minutes', math.ceil(remaining / 60))
         end
     end
 
@@ -951,7 +1010,8 @@ CreateThread(function()
                 parts[#parts + 1] = tonumber(part)
             end
             if #parts == 3 then
-                doghouseCache[row.citizenid] = vector3(parts[1], parts[2], parts[3])
+                -- B3: Cache heading alongside coords so getDoghouse never hits DB
+                doghouseCache[row.citizenid] = { x = parts[1], y = parts[2], z = parts[3], heading = row.heading }
             end
         end
         if #rows > 0 then
@@ -1012,30 +1072,22 @@ lib.callback.register('murderface-pets:server:placeDoghouse', function(source, c
         { citizenid, coordStr, heading }
     )
 
-    doghouseCache[citizenid] = vector3(coords.x, coords.y, coords.z)
+    -- B3: Store heading in cache alongside coords
+    doghouseCache[citizenid] = { x = coords.x, y = coords.y, z = coords.z, heading = heading }
     return true
 end)
 
 -- Get player's dog house location
+-- B3: Use server-side cache instead of DB query on every player connect
 lib.callback.register('murderface-pets:server:getDoghouse', function(source)
     local src = source
     local player = exports.qbx_core:GetPlayer(src)
     if not player then return nil end
     local citizenid = player.PlayerData.citizenid
 
-    local rows = MySQL.query.await(
-        'SELECT coords, heading FROM murderface_doghouses WHERE citizenid = ?',
-        { citizenid }
-    )
-    if not rows or #rows == 0 then return nil end
-
-    local row = rows[1]
-    local parts = {}
-    for part in row.coords:gmatch('[^,]+') do
-        parts[#parts + 1] = tonumber(part)
-    end
-    if #parts ~= 3 then return nil end
-    return { x = parts[1], y = parts[2], z = parts[3], heading = row.heading }
+    local cached = doghouseCache[citizenid]
+    if not cached then return nil end
+    return { x = cached.x, y = cached.y, z = cached.z, heading = cached.heading }
 end)
 
 -- Remove dog house (pick up)
@@ -1315,6 +1367,7 @@ lib.callback.register('murderface-pets:server:renamePet', function(source, hash,
     end
 
     petData.metadata.name = newName
+    petData.dirty = true -- O1
     Pet:saveData(src, hash)
 
     -- Consume the nametag item
@@ -1372,6 +1425,7 @@ lib.callback.register('murderface-pets:server:transferOwnership', function(sourc
     end
 
     petData.metadata.owner = newOwner.PlayerData.charinfo
+    petData.dirty = true -- O1
     Pet:saveData(src, data.hash)
     Pet:despawnPet(src, data.hash, true)
     return { state = true, msg = Lang:t('success.successful_ownership_transfer') }

@@ -167,6 +167,18 @@ RegisterNetEvent('murderface-pets:server:applyCustomization', function(item, pro
     end
     if not serverItem then return end
 
+    -- B4: Server-side name validation before applying any customization
+    if item.metadata.name then
+        local nameCheck = ValidatePetName(item.metadata.name)
+        if nameCheck ~= true then
+            TriggerClientEvent('ox_lib:notify', src, {
+                description = 'Invalid pet name.',
+                type = 'error'
+            })
+            return
+        end
+    end
+
     if processType == Config.items.groomingkit.name then
         -- Grooming: preserve server-side stats, only allow appearance change
         local petData = Pet:findByHash(src, item.metadata.hash)
@@ -244,10 +256,10 @@ function Update.xp(src, petData)
         petData.metadata.level = newLevel
         local msg = string.format(Lang:t('info.level_up'), petData.metadata.name, newLevel)
         TriggerClientEvent('ox_lib:notify', src, { description = msg, type = 'inform' })
+        -- O3: Only sync XP to client on level-up (not every passive tick)
+        TriggerClientEvent('murderface-pets:client:syncXP', src,
+            petData.metadata.hash, petData.metadata.XP, newLevel)
     end
-
-    TriggerClientEvent('murderface-pets:client:syncXP', src,
-        petData.metadata.hash, petData.metadata.XP, newLevel)
 end
 
 --- Sync pet health from game entity to metadata
@@ -313,15 +325,6 @@ end
 
 local activityCooldowns = {} -- keyed by "src:action"
 
-local activityCooldownTimes = {
-    huntKill = 30,
-    petting  = 60,
-    trick    = 15,
-    k9Search = 30,
-    guarding = 60,
-    tracking = 30,
-}
-
 --- Check if a player is on cooldown for a specific XP action.
 --- Returns true if still on cooldown; otherwise stamps the time and returns false.
 ---@param src number Player source
@@ -329,7 +332,7 @@ local activityCooldownTimes = {
 ---@return boolean onCooldown
 function IsOnActivityCooldown(src, action)
     local key = src .. ':' .. action
-    local cd = activityCooldownTimes[action]
+    local cd = Config.activityCooldowns[action]
     if not cd then return false end -- no cooldown for this action
 
     local now = os.time()
