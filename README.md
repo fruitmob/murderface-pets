@@ -1,14 +1,96 @@
 # murderface-pets
 
-Pet companion system for FiveM (Qbox framework). Players can buy, customize, and interact with animal companions. Includes an XP/leveling system, hunger/thirst needs, K9 police functionality, and database backup persistence.
+**A free, open-source pet companion system for FiveM — built on the Qbox/ox stack.**
+
+Most pet scripts on Tebex charge $15–$30 for a fraction of what this does. murderface-pets gives you 16 animals, a full XP and progression system, K9 police functionality, hunting, tricks, grooming, and more — all config-driven, all free.
+
+## Why This Script
+
+- **Zero performance overhead** — no per-frame loops, no streaming assets. Stat updates tick every 10 seconds. Client-to-server sync is event-driven, not polled.
+- **Drop-in install** — one SQL file, paste item defs into ox_inventory, copy images, `ensure`. Five minutes and you're live.
+- **Everything is config-driven** — XP rates, level gates, food/thirst drain, K9 illegal items, shop prices, pet stats. Tune your server without touching Lua.
+- **Built on the modern stack** — qbx_core, ox_lib, ox_inventory, ox_target, oxmysql. No legacy QB dependencies, no spaghetti wrappers.
+- **Database-backed persistence** — pet metadata lives in ox_inventory items and is automatically backed up to MySQL every save tick. Admin restore command included.
+
+## Features at a Glance
+
+### 16 Unique Companions
+Dogs, cats, big cats, primates, and small animals — each with per-model health, pricing, animations, and trait flags.
+
+| Category | Animals | Highlights |
+|----------|---------|------------|
+| Large Dogs | Husky, German Shepherd, Rottweiler, Retriever, Chop | Tricks, petting, hunting |
+| Small Dogs | Westie, Pug, Poodle | Tricks, petting |
+| Cats | House Cat | Petting animations |
+| Wild | Black Panther, Mountain Lion, Coyote | Hunting predators |
+| Small Animals | Chicken, Rabbit | Idle companions |
+| Primates | Chimpanzee, Rhesus Monkey | Build 3258+ |
+
+### XP & Progression System
+Pets level up from 0 to 50 through **7 active XP sources** and passive XP ticks. Progression unlocks new abilities as your pet grows.
+
+| XP Source | Amount | Cooldown |
+|-----------|--------|----------|
+| Passive (while spawned) | 10/tick (scales down) | Every 10s |
+| Hunt kill | 50 | 30s |
+| K9 search | 40 | 30s |
+| Feeding | 20 | — |
+| Petting | 15 | 60s |
+| Watering | 15 | — |
+| Trick performance | 10 | 15s |
+| Healing | 10 | — |
+
+**Level-gated unlocks:**
+- Level 5 — Hunting
+- Level 5/10/20 — Trick tiers (beg, paw, play dead)
+- Level 10 — K9 police searches
+- Level 15/30 — Faster follow speed
+- Level 25 — Passive health regeneration
+
+**Rank titles:** Puppy → Trained → Veteran → Elite → Legendary
+
+Real-time XP display in the View Stats panel — no need to despawn/respawn to check progress. Milestone celebrations at levels 10, 25, and 50 with notifications and pet vocalizations.
+
+### Full Interaction System
+- **Command menu** (default: `O` key) — follow, wait, sit, tricks, hunt, go there, get in car
+- **ox_target interactions** — pet, view stats, heal, revive, give water
+- **Petting animations** — player and pet play synced animations, awards XP, relieves stress (configurable HUD integration)
+- **Tricks** — sit, beg, shake paw, play dead (level-gated, per-trick unlock)
+- **Auto vehicle enter/exit** — pet hops in when you get in a car, hops out when you leave
+
+### Hunting System
+Dogs and wild cats can hunt local wildlife. Level-gated at level 5. Pets chase, attack, and return with the kill. Awards XP on successful hunts.
+
+### K9 Police System
+K9-eligible breeds (German Shepherd, Rottweiler) can be used by officers to:
+- **Search players** for contraband (configurable illegal item list)
+- **Search vehicles** for drugs and paraphernalia
+
+Requires a configurable job (default: `police`) and level 10+.
+
+### Care System
+- **Hunger** drains over time — feed with pet food items
+- **Thirst** builds over time — fill and use water bottles (refillable)
+- **Health** drains when starving or dehydrated — heal with first aid kits
+- **Death & revival** — pets can die and be revived with first aid (ox_target)
+- **Health regeneration** — level 25+ pets slowly regenerate HP
+
+### Customization & Economy
+- **Pet shop NPC** with configurable location and pricing
+- **Supply shop NPC** with food, water bottles, first aid, collars, nametags, grooming kits
+- **Grooming** — change your pet's coat/variation with a grooming kit
+- **Renaming** — rename your pet with a nametag item (profanity filter included)
+- **Ownership transfer** — give your pet to another player with a collar item
 
 ## Dependencies
 
-- [qbx_core](https://github.com/Qbox-project/qbx_core)
-- [ox_lib](https://github.com/overextended/ox_lib)
-- [ox_inventory](https://github.com/overextended/ox_inventory)
-- [ox_target](https://github.com/overextended/ox_target)
-- [oxmysql](https://github.com/overextended/oxmysql)
+| Resource | Link |
+|----------|------|
+| qbx_core | [Qbox-project/qbx_core](https://github.com/Qbox-project/qbx_core) |
+| ox_lib | [overextended/ox_lib](https://github.com/overextended/ox_lib) |
+| ox_inventory | [overextended/ox_inventory](https://github.com/overextended/ox_inventory) |
+| ox_target | [overextended/ox_target](https://github.com/overextended/ox_target) |
+| oxmysql | [overextended/oxmysql](https://github.com/overextended/oxmysql) |
 
 ## Installation
 
@@ -249,64 +331,19 @@ Make sure it starts **after** all dependencies (qbx_core, ox_lib, ox_inventory, 
 
 The chimpanzee (`a_c_chimp_02`) and rhesus monkey (`a_c_rhesus`) models require **build 3258+**. If your server runs a lower build, remove those two entries from `Config.pets` in `config.lua`.
 
-## Features
-
-### Pets (16 animals)
-
-| Animal | Model | Animations | Special |
-|--------|-------|-----------|---------|
-| Husky | A_C_Husky | Sit, sleep, bark, tricks, petting | Can hunt |
-| German Shepherd | A_C_shepherd | Sit, sleep, bark, tricks, petting | Can hunt, K9 eligible |
-| Rottweiler | A_C_Rottweiler | Sit, sleep, bark, tricks, petting | Can hunt, K9 eligible |
-| Golden Retriever | A_C_Retriever | Sit, sleep, bark, tricks, petting | Can hunt |
-| Chop | a_c_chop_02 | Sit, sleep, bark, tricks, petting | Can hunt |
-| Westie | A_C_Westy | Sit, sleep, tricks, petting | - |
-| Pug | A_C_Pug | Sit, sleep, tricks, petting | - |
-| Poodle | A_C_Poodle | Sit, sleep, tricks, petting | - |
-| House Cat | A_C_Cat_01 | Sit, sleep, petting | - |
-| Black Panther | A_C_Panther | Sit, sleep | Can hunt |
-| Mountain Lion | A_C_MtLion | Sit, sleep | Can hunt |
-| Coyote | A_C_Coyote | Sit, sleep | Can hunt |
-| Chicken | A_C_Hen | Basic idle | - |
-| Rabbit | A_C_Rabbit_01 | Basic idle | - |
-| Chimpanzee | a_c_chimp_02 | Sit, sleep | Build 3258+ |
-| Rhesus Monkey | a_c_rhesus | Sit, sleep | Build 3258+ |
-
-### Player interactions
-
-- **Spawn/despawn** pets from inventory (up to 2 active at once)
-- **Feed** and **water** your pet to keep it healthy
-- **Heal** or **revive** with first aid kits (via ox_target)
-- **Rename** with nametag items
-- **Groom** to change coat/variation with grooming kits
-- **Transfer ownership** with collar items
-- **Command menu** (default: `O` key) with actions like follow, wait, sit, tricks, hunt, go there, get in car
-- **Petting** animation (ox_target interaction)
-- **XP and leveling** system (max level 50) — pets gain XP passively while spawned
-
-### K9 system
-
-Police officers (configurable job list) with K9-eligible pets can:
-- **Search players** for illegal items
-- **Search vehicles** for contraband
-
-### Pet shop
-
-An NPC pet shop and supply shop are included. Edit coordinates and pricing in `config.lua` under `Config.petShop` and `Config.suppliesShop`.
-
-### Database backup
-
-Pet metadata is automatically backed up to the `murderface_pets` MySQL table on every save. This provides a safety net if ox_inventory items are lost. Admin restore command: `/petrestore [citizenid] [hash]`.
-
 ## Configuration
 
-All settings are in `config.lua` with inline comments. Key sections:
+All settings are in `config.lua` with inline comments. Everything is tunable without touching any other file.
 
 | Section | What it controls |
 |---------|-----------------|
 | `Config.maxActivePets` | Max simultaneously spawned pets (default: 2) |
-| `Config.petMenuKeybind` | Key to open companion menu (default: `o`) |
-| `Config.balance` | XP rates, food/thirst drain, AFK timers |
+| `Config.petMenuKeybind` | Key to open companion menu (default: `O`) |
+| `Config.xp` | Per-action XP awards for all 7 sources |
+| `Config.progression` | Level gates, follow speed tiers, milestones, health regen |
+| `Config.trickLevels` | Per-trick unlock levels |
+| `Config.levelTitles` | Rank title thresholds |
+| `Config.balance` | Food/thirst drain rates, AFK timers |
 | `Config.items` | Item names, durations, heal percentages |
 | `Config.k9` | Eligible jobs, illegal item list for searches |
 | `Config.petShop` | Shop NPC model, coords, blip settings |
@@ -314,7 +351,7 @@ All settings are in `config.lua` with inline comments. Key sections:
 | `Config.stressRelief` | Stress reduction from petting (for HUD scripts) |
 | `Config.blip` | Map blip settings for active pets |
 
-## Developer notes
+## Developer Notes
 
 ### ox_inventory export signature — no `_` placeholder
 
@@ -358,7 +395,7 @@ Pet items use `consume = 0` in their ox_inventory item definitions. In Lua, `0` 
 
 PNGs must be in `ox_inventory/web/images/` with exact lowercase names matching the item key (e.g., `murderface_husky.png`). The NUI constructs the path as `nui://ox_inventory/web/images/{item.name}.png`. After adding new images, a full server restart (or `restart ox_inventory` + client cache clear) is needed for the NUI to pick them up.
 
-## File structure
+## File Structure
 
 ```
 murderface-pets/
@@ -381,3 +418,7 @@ murderface-pets/
 │   └── menu.lua            -- Context menus (ox_lib)
 └── inventory_images/       -- Item icons for ox_inventory
 ```
+
+## License
+
+Free and open source. Use it, modify it, share it.
