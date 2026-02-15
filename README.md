@@ -29,159 +29,205 @@ Open `ox_inventory/data/items.lua` and paste the following block inside the `ret
 ```lua
 	-- ========================================
 	--  murderface-pets: Pet Items
-	--  stack = false (each pet has unique metadata)
+	--  consume = 0: usable but not consumed on use
+	--  server.export: links to murderface-pets resource handler
 	-- ========================================
 
 	['murderface_husky'] = {
 		label = 'Husky',
 		weight = 100,
 		stack = false,
+		consume = 0,
 		description = 'A loyal Husky companion',
+		server = { export = 'murderface-pets.murderface_husky' },
 	},
 
 	['murderface_shepherd'] = {
 		label = 'German Shepherd',
 		weight = 100,
 		stack = false,
+		consume = 0,
 		description = 'A brave German Shepherd companion',
+		server = { export = 'murderface-pets.murderface_shepherd' },
 	},
 
 	['murderface_rottweiler'] = {
 		label = 'Rottweiler',
 		weight = 100,
 		stack = false,
+		consume = 0,
 		description = 'A powerful Rottweiler companion',
+		server = { export = 'murderface-pets.murderface_rottweiler' },
 	},
 
 	['murderface_retriever'] = {
 		label = 'Golden Retriever',
 		weight = 100,
 		stack = false,
+		consume = 0,
 		description = 'A friendly Golden Retriever companion',
+		server = { export = 'murderface-pets.murderface_retriever' },
 	},
 
 	['murderface_chop'] = {
 		label = 'Chop',
 		weight = 100,
 		stack = false,
+		consume = 0,
 		description = 'A tough old dog with character',
+		server = { export = 'murderface-pets.murderface_chop' },
 	},
 
 	['murderface_westy'] = {
 		label = 'Westie',
 		weight = 100,
 		stack = false,
+		consume = 0,
 		description = 'A spirited West Highland Terrier companion',
+		server = { export = 'murderface-pets.murderface_westy' },
 	},
 
 	['murderface_pug'] = {
 		label = 'Pug',
 		weight = 100,
 		stack = false,
+		consume = 0,
 		description = 'An adorable Pug companion',
+		server = { export = 'murderface-pets.murderface_pug' },
 	},
 
 	['murderface_poodle'] = {
 		label = 'Poodle',
 		weight = 100,
 		stack = false,
+		consume = 0,
 		description = 'An elegant Poodle companion',
+		server = { export = 'murderface-pets.murderface_poodle' },
 	},
 
 	['murderface_cat'] = {
 		label = 'House Cat',
 		weight = 100,
 		stack = false,
+		consume = 0,
 		description = 'An independent feline companion',
+		server = { export = 'murderface-pets.murderface_cat' },
 	},
 
 	['murderface_panther'] = {
 		label = 'Black Panther',
 		weight = 100,
 		stack = false,
+		consume = 0,
 		description = 'A sleek and dangerous Black Panther',
+		server = { export = 'murderface-pets.murderface_panther' },
 	},
 
 	['murderface_mtlion'] = {
 		label = 'Mountain Lion',
 		weight = 100,
 		stack = false,
+		consume = 0,
 		description = 'A fierce Mountain Lion companion',
+		server = { export = 'murderface-pets.murderface_mtlion' },
 	},
 
 	['murderface_coyote'] = {
 		label = 'Coyote',
 		weight = 100,
 		stack = false,
+		consume = 0,
 		description = 'A cunning Coyote companion',
+		server = { export = 'murderface-pets.murderface_coyote' },
 	},
 
 	['murderface_hen'] = {
 		label = 'Chicken',
 		weight = 100,
 		stack = false,
+		consume = 0,
 		description = 'A trusty Chicken companion',
+		server = { export = 'murderface-pets.murderface_hen' },
 	},
 
 	['murderface_rabbit'] = {
 		label = 'Rabbit',
 		weight = 100,
 		stack = false,
+		consume = 0,
 		description = 'A fluffy Rabbit companion',
+		server = { export = 'murderface-pets.murderface_rabbit' },
 	},
 
 	['murderface_chimp'] = {
 		label = 'Chimpanzee',
 		weight = 100,
 		stack = false,
+		consume = 0,
 		description = 'A clever Chimpanzee companion (build 3258+)',
+		server = { export = 'murderface-pets.murderface_chimp' },
 	},
 
 	['murderface_rhesus'] = {
 		label = 'Rhesus Monkey',
 		weight = 100,
 		stack = false,
+		consume = 0,
 		description = 'A mischievous Rhesus Monkey companion (build 3258+)',
+		server = { export = 'murderface-pets.murderface_rhesus' },
 	},
 
 	-- ========================================
 	--  murderface-pets: Supply Items
+	--  consume = 0: usable but not consumed (resource handles removal)
 	-- ========================================
 
 	['murderface_food'] = {
 		label = 'Pet Food',
 		weight = 200,
+		consume = 0,
 		description = 'Nutritious food for your pet',
+		server = { export = 'murderface-pets.murderface_food' },
 	},
 
 	['murderface_firstaid'] = {
 		label = 'Pet First Aid',
 		weight = 300,
+		consume = 0,
 		description = 'Heals or revives your pet (use via 3rd eye)',
+		server = { export = 'murderface-pets.murderface_firstaid' },
 	},
 
 	['murderface_waterbottle'] = {
 		label = 'Water Bottle',
 		weight = 500,
+		consume = 0,
 		description = 'Refillable water bottle for your pet',
+		server = { export = 'murderface-pets.murderface_waterbottle' },
 	},
 
 	['murderface_collar'] = {
 		label = 'Pet Collar',
 		weight = 100,
+		consume = 0,
 		description = 'Transfer pet ownership to another player',
+		server = { export = 'murderface-pets.murderface_collar' },
 	},
 
 	['murderface_nametag'] = {
 		label = 'Pet Nametag',
 		weight = 50,
+		consume = 0,
 		description = 'Rename your pet companion',
+		server = { export = 'murderface-pets.murderface_nametag' },
 	},
 
 	['murderface_groomingkit'] = {
 		label = 'Grooming Kit',
 		weight = 400,
+		consume = 0,
 		description = 'Change your pet\'s coat and appearance',
+		server = { export = 'murderface-pets.murderface_groomingkit' },
 	},
 ```
 

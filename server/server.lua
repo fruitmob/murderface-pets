@@ -267,12 +267,14 @@ end)
 --    Pet Item Exports
 -- ============================
 
---- Common handler for all pet items (ox_inventory usingItem)
----@param event string
----@param item table Item definition
----@param inventory table Inventory data
+--- Common handler for all pet items (ox_inventory server.export callback)
+--- ox_inventory's useExport wrapper prepends a nil arg, so first param is discarded.
+---@param _ nil Placeholder (useExport passes nil)
+---@param event string 'usingItem' | 'usedItem'
+---@param item table Item definition from ox_inventory
+---@param inventory table Full inventory object (has .id, .items)
 ---@param slot number Slot number
-local function handlePetItem(event, item, inventory, slot)
+local function handlePetItem(_, event, item, inventory, slot)
     if event ~= 'usingItem' then return end
 
     local src = inventory.id
@@ -314,41 +316,41 @@ end
 --    Supply Item Exports
 -- ============================
 
-exports(Config.items.food.name, function(event, _, inventory)
+exports(Config.items.food.name, function(_, event, _item, inventory)
     if event == 'usingItem' then
         TriggerClientEvent('murderface-pets:client:feedPet', inventory.id)
         return false
     end
 end)
 
-exports(Config.items.collar.name, function(event, _, inventory)
+exports(Config.items.collar.name, function(_, event, _item, inventory)
     if event == 'usingItem' then
         TriggerClientEvent('murderface-pets:client:transferOwnership', inventory.id)
         return false
     end
 end)
 
-exports(Config.items.nametag.name, function(event, item, inventory)
+exports(Config.items.nametag.name, function(_, event, item, inventory)
     if event == 'usingItem' then
         TriggerClientEvent('murderface-pets:client:renamePet', inventory.id, item)
         return false
     end
 end)
 
-exports(Config.items.firstaid.name, function(event)
+exports(Config.items.firstaid.name, function(_, event)
     if event == 'usingItem' then
         return false -- consumed via ox_target heal/revive interaction
     end
 end)
 
-exports(Config.items.groomingkit.name, function(event, _, inventory)
+exports(Config.items.groomingkit.name, function(_, event, _item, inventory)
     if event == 'usingItem' then
         TriggerClientEvent('murderface-pets:client:groomPet', inventory.id)
         return false
     end
 end)
 
-exports(Config.items.waterbottle.name, function(event, item, inventory, slot)
+exports(Config.items.waterbottle.name, function(_, event, item, inventory, slot)
     if event == 'usingItem' then
         local src = inventory.id
         local refillCost = Config.items.waterbottle.refillCost
