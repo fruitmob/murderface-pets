@@ -41,10 +41,11 @@ local menu = {
         description = 'Target an animal to hunt',
         triggerNotification = { 'PETNAME is now hunting!', 'PETNAME can not do that!' },
         show = function(activePed)
-            return activePed.canHunt == true
+            if not activePed.canHunt then return false end
+            return (activePed.item.metadata.level or 0) >= Config.progression.minHuntLevel
         end,
         action = function(_, activePed)
-            local minLevel = Config.balance.minHuntLevel
+            local minLevel = Config.progression.minHuntLevel
             if not activePed.canHunt then
                 lib.notify({ description = Lang:t('menu.action_menu.error.pet_unable_to_hunt'), type = 'error', duration = 7000 })
                 return false
@@ -55,7 +56,7 @@ local menu = {
                 return
             end
 
-            if activePed.item.metadata.level <= minLevel then
+            if activePed.item.metadata.level < minLevel then
                 lib.notify({
                     description = string.format(Lang:t('menu.action_menu.error.not_meet_min_requirement_to_hunt'), minLevel),
                     type = 'error', duration = 7000
@@ -74,16 +75,17 @@ local menu = {
         iconColor = '#e8590c',
         description = 'Hunt and bring the prey to you',
         show = function(activePed)
-            return activePed.canHunt == true
+            if not activePed.canHunt then return false end
+            return (activePed.item.metadata.level or 0) >= Config.progression.minHuntLevel
         end,
         action = function(plyped, activePed)
-            local minLevel = Config.balance.minHuntLevel
+            local minLevel = Config.progression.minHuntLevel
             if not activePed.canHunt then
                 lib.notify({ description = Lang:t('menu.action_menu.error.pet_unable_to_hunt'), type = 'error', duration = 7000 })
                 return false
             end
 
-            if activePed.item.metadata.level <= minLevel then
+            if activePed.item.metadata.level < minLevel then
                 lib.notify({
                     description = string.format(Lang:t('menu.action_menu.error.not_meet_min_requirement_to_hunt'), minLevel),
                     type = 'error', duration = 7000
@@ -136,7 +138,8 @@ local menu = {
         description = 'K9 sniff search on nearest person',
         show = function(activePed)
             if not isK9Job() then return false end
-            return activePed.petConfig and activePed.petConfig.isK9
+            if not activePed.petConfig or not activePed.petConfig.isK9 then return false end
+            return (activePed.item.metadata.level or 0) >= Config.progression.minK9Level
         end,
         action = function(plyped, activePed)
             SearchLogic(plyped, activePed)
@@ -150,7 +153,8 @@ local menu = {
         description = 'K9 sniff search on nearest vehicle',
         show = function(activePed)
             if not isK9Job() then return false end
-            return activePed.petConfig and activePed.petConfig.isK9
+            if not activePed.petConfig or not activePed.petConfig.isK9 then return false end
+            return (activePed.item.metadata.level or 0) >= Config.progression.minK9Level
         end,
         action = function(_, activePed)
             local vehicle = getClosestVehicle()
@@ -227,6 +231,10 @@ local menu = {
             Wait(5000)
             ClearPedTasks(plyped)
 
+            -- Award petting XP
+            TriggerServerEvent('murderface-pets:server:updatePetStats',
+                activePed.item.metadata.hash, { key = 'activity', action = 'petting' })
+
             if Config.stressRelief.enabled then
                 TriggerServerEvent(Config.stressRelief.event,
                     math.random(Config.stressRelief.amount.min, Config.stressRelief.amount.max))
@@ -243,6 +251,7 @@ local menu = {
 local function buildTrickItems(activePed)
     local trickNames = Anims.getTrickNames(activePed.animClass)
     local items = {}
+    local petLevel = activePed.item.metadata.level or 0
     local trickIcons = {
         beg       = { icon = 'hands-praying', desc = 'Stand up and beg for treats' },
         paw       = { icon = 'paw',           desc = 'Offer a friendly paw shake' },
@@ -251,13 +260,20 @@ local function buildTrickItems(activePed)
 
     for _, name in ipairs(trickNames) do
         local info = trickIcons[name] or { icon = 'wand-magic-sparkles', desc = name }
+        local reqLevel = Config.trickLevels[name] or 0
+        local locked = petLevel < reqLevel
+
         items[#items + 1] = {
             label = name:gsub('_', ' '):gsub('^%l', string.upper),
             icon = info.icon,
-            iconColor = '#9c36b5',
-            description = info.desc,
+            iconColor = locked and '#868e96' or '#9c36b5',
+            description = locked and string.format('Unlocks at level %d', reqLevel) or info.desc,
+            disabled = locked,
             action = function(_, ped)
                 Anims.playSub(ped.entity, ped.animClass, 'tricks', name)
+                -- Award trick XP
+                TriggerServerEvent('murderface-pets:server:updatePetStats',
+                    ped.item.metadata.hash, { key = 'activity', action = 'trick' })
             end,
         }
     end
@@ -285,7 +301,8 @@ local function registerTricksMenu(pet)
             description = value.description,
             icon = value.icon,
             iconColor = value.iconColor,
-            onSelect = function()
+            disabled = value.disabled,
+            onSelect = value.disabled and nil or function()
                 local activePed = ActivePed:read()
                 if not activePed then return end
                 activePed.entity = NetworkGetEntityFromNetworkId(activePed.netId)
@@ -653,7 +670,8 @@ CreateThread(function()
     -- Spawn shop ped
     local model = joaat(shop.ped.model)
     lib.requestModel(model)
-    local ped = CreatePed(0, model, shop.ped.coords.x, shop.ped.coords.y, shop.ped.coords.z - 1.0, shop.ped.coords.w, false, false)
+    local ped = CreatePed(0, model, shop.ped.coords.x, shop.ped.coords.y, shop.ped.coords.z - 1.0, shop.ped.coords.w, false, true)
+    SetEntityAsMissionEntity(ped, true, true)
     FreezeEntityPosition(ped, true)
     SetEntityInvincible(ped, true)
     SetBlockingOfNonTemporaryEvents(ped, true)
@@ -722,7 +740,8 @@ CreateThread(function()
 
     local model = joaat(shop.ped.model)
     lib.requestModel(model)
-    local ped = CreatePed(0, model, shop.ped.coords.x, shop.ped.coords.y, shop.ped.coords.z - 1.0, shop.ped.coords.w, false, false)
+    local ped = CreatePed(0, model, shop.ped.coords.x, shop.ped.coords.y, shop.ped.coords.z - 1.0, shop.ped.coords.w, false, true)
+    SetEntityAsMissionEntity(ped, true, true)
     FreezeEntityPosition(ped, true)
     SetEntityInvincible(ped, true)
     SetBlockingOfNonTemporaryEvents(ped, true)

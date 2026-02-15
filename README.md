@@ -314,6 +314,50 @@ All settings are in `config.lua` with inline comments. Key sections:
 | `Config.stressRelief` | Stress reduction from petting (for HUD scripts) |
 | `Config.blip` | Map blip settings for active pets |
 
+## Developer notes
+
+### ox_inventory export signature — no `_` placeholder
+
+ox_inventory's `useExport` wrapper (`modules/items/shared.lua`) prepends a `nil` argument when calling item exports:
+
+```lua
+-- ox_inventory source (DO NOT rely on this nil arriving)
+return exports[resource][export](nil, ...)
+```
+
+**FiveM's cross-resource export marshaling drops leading `nil` arguments.** The `nil` never reaches the target function. All export handlers must use the direct signature:
+
+```lua
+-- CORRECT — arguments arrive as (event, item, inventory, slot)
+local function handler(event, item, inventory, slot)
+    if event ~= 'usingItem' then return end
+    -- ...
+    return false  -- prevent consumption
+end
+exports('item_name', handler)
+```
+
+```lua
+-- WRONG — nil is dropped, shifts all args by one position
+-- event receives the item table, item receives inventory, etc.
+-- The guard `event ~= 'usingItem'` silently aborts every use.
+local function handler(_, event, item, inventory, slot)
+```
+
+This applies to **any** resource using `server = { export = 'resource.item' }` in ox_inventory `data/items.lua`. The ox_inventory docs and source code suggest the `_` placeholder is needed, but in practice it breaks the handler.
+
+### consume = 0
+
+Pet items use `consume = 0` in their ox_inventory item definitions. In Lua, `0` is truthy (unlike JavaScript), so ox_inventory enters the consume branch but the handler returns `false` to prevent the item from being removed. This keeps the pet item in the player's inventory after use.
+
+### Startup diagnostics
+
+`server/server.lua` includes a startup diagnostic thread that runs 5 seconds after boot. It queries `exports.ox_inventory:Items()` to verify ox_inventory has loaded the murderface items with proper `cb` callbacks. Check the server console for output prefixed with `[murderface-pets]`.
+
+### Item images
+
+PNGs must be in `ox_inventory/web/images/` with exact lowercase names matching the item key (e.g., `murderface_husky.png`). The NUI constructs the path as `nui://ox_inventory/web/images/{item.name}.png`. After adding new images, a full server restart (or `restart ox_inventory` + client cache clear) is needed for the NUI to pick them up.
+
 ## File structure
 
 ```

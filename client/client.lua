@@ -210,6 +210,53 @@ RegisterNetEvent('murderface-pets:client:spawnPet', function(modelName, hostileT
             },
         }
 
+        -- Stats viewer
+        table.insert(targetOptions, {
+            name = 'mfpets_stats',
+            icon = 'fas fa-heart-pulse',
+            label = 'View Stats',
+            canInteract = function(entity)
+                return ActivePed:read() ~= nil
+            end,
+            onSelect = function()
+                local pd = ActivePed:findByHash(item.metadata.hash)
+                if not pd then return end
+                local md = pd.item.metadata
+                local cfg = pd.petConfig
+                local currentHP = DoesEntityExist(ped) and (GetEntityHealth(ped) - 100) or math.floor(md.health or 0)
+                local maxHP = (cfg and cfg.maxHealth or pd.maxHealth or 0) - 100
+
+                local level = md.level or 0
+                local title = Config.getLevelTitle(level)
+                local currentXP = md.XP or 0
+                local nextLevelXP = Config.xpForLevel(level + 1)
+
+                lib.registerContext({
+                    id = 'mfpets_stats_view',
+                    title = (md.name or 'Pet') .. ' — Stats',
+                    options = {
+                        {
+                            title = cfg and cfg.label or 'Companion',
+                            icon = cfg and cfg.icon or 'paw',
+                            iconColor = '#12b886',
+                            description = string.format('%s — %s',
+                                cfg and cfg.species:gsub('^%l', string.upper) or '',
+                                title),
+                            metadata = {
+                                { label = 'Level', value = string.format('%d (%s)', level, title) },
+                                { label = 'XP', value = string.format('%d / %d', currentXP, nextLevelXP) },
+                                { label = 'Health', value = ('%d / %d'):format(math.max(0, currentHP), maxHP) },
+                                { label = 'Food', value = ('%.0f%%'):format(md.food or 0) },
+                                { label = 'Thirst', value = ('%.0f%%'):format(md.thirst or 0) },
+                            },
+                        },
+                    },
+                })
+                lib.showContext('mfpets_stats_view')
+            end,
+            distance = 2.5,
+        })
+
         -- Add petting option only for pets that support it
         if petCfg and petCfg.canPet then
             table.insert(targetOptions, 1, {
@@ -233,6 +280,10 @@ RegisterNetEvent('murderface-pets:client:spawnPet', function(modelName, hostileT
                     -- Play pet and player petting animations
                     Anims.playSub(entity, petCfg.animClass, 'petting', 'pet_anim')
                     Anims.playSub(playerPed, petCfg.animClass, 'petting', 'human_anim')
+
+                    -- Award petting XP
+                    TriggerServerEvent('murderface-pets:server:updatePetStats',
+                        item.metadata.hash, { key = 'activity', action = 'petting' })
 
                     if Config.stressRelief.enabled then
                         TriggerServerEvent(Config.stressRelief.event,
@@ -659,6 +710,43 @@ RegisterNetEvent('murderface-pets:client:customizePet', function(item, petInfo)
             type = petInfo.processType,
         },
     })
+end)
+
+-- ============================
+--     XP / Level Sync
+-- ============================
+
+RegisterNetEvent('murderface-pets:client:syncXP', function(hash, xp, level)
+    local petData = ActivePed:findByHash(hash)
+    if not petData then return end
+    petData.item.metadata.XP = xp
+    petData.item.metadata.level = level
+end)
+
+-- ============================
+--     Milestone Celebration
+-- ============================
+
+RegisterNetEvent('murderface-pets:client:milestone', function(hash, level, petName)
+    local petData = ActivePed:findByHash(hash)
+
+    -- Special notification
+    local title = Config.getLevelTitle(level)
+    lib.notify({
+        title = 'Milestone Reached!',
+        description = string.format('%s reached level %d — %s!', petName, level, title),
+        type = 'success',
+        duration = 10000,
+    })
+
+    -- Pet barks/vocalizes to celebrate
+    if petData and DoesEntityExist(petData.entity) then
+        SetAnimalMood(petData.entity, 1)
+        PlayAnimalVocalization(petData.entity, 3, 'bark')
+        if petData.animClass then
+            Anims.play(petData.entity, petData.animClass, 'bark')
+        end
+    end
 end)
 
 -- ============================

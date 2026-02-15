@@ -35,7 +35,6 @@ Config.stressRelief = {
 -- ========================================
 Config.balance = {
     maxLevel = 50,
-    minHuntLevel = 1,             -- minimum level before a pet can hunt
 
     afk = {
         resetAfter = 120,         -- seconds before AFK timer resets
@@ -55,6 +54,86 @@ Config.balance = {
         healthDrainWhenDehydrated = 0.5, -- HP lost per tick at 100 thirst
     },
 }
+
+-- ========================================
+--  XP Awards (per action)
+-- ========================================
+Config.xp = {
+    passive    = 10,   -- base XP per passive tick (scales down with level)
+    huntKill   = 50,
+    petting    = 15,
+    trick      = 10,
+    feeding    = 20,
+    watering   = 15,
+    k9Search   = 40,
+    healing    = 10,
+}
+
+-- ========================================
+--  Progression / Level-Gated Unlocks
+-- ========================================
+Config.progression = {
+    minHuntLevel      = 5,
+    minK9Level        = 10,
+    healthRegenLevel  = 25,
+    healthRegenAmount = 0.5,  -- HP per save tick when level qualifies
+    followSpeed = {
+        { minLevel = 0,  speed = 3.0 },
+        { minLevel = 15, speed = 4.0 },
+        { minLevel = 30, speed = 5.0 },
+    },
+    milestones = { 10, 25, 50 },
+}
+
+Config.trickLevels = {
+    sit       = 0,
+    beg       = 5,
+    paw       = 10,
+    play_dead = 20,
+}
+
+Config.levelTitles = {
+    { maxLevel = 5,  title = 'Puppy' },
+    { maxLevel = 15, title = 'Trained' },
+    { maxLevel = 30, title = 'Veteran' },
+    { maxLevel = 49, title = 'Elite' },
+    { maxLevel = 50, title = 'Legendary' },
+}
+
+-- ========================================
+--  Shared Helpers (available on client + server)
+-- ========================================
+
+--- XP threshold for a given level (quadratic curve)
+---@param level number
+---@return number
+function Config.xpForLevel(level)
+    if level <= 0 then return 0 end
+    return 75 + (level * level * 15)
+end
+
+--- Lookup level title from Config.levelTitles
+---@param level number
+---@return string
+function Config.getLevelTitle(level)
+    for _, t in ipairs(Config.levelTitles) do
+        if level <= t.maxLevel then return t.title end
+    end
+    return 'Legendary'
+end
+
+--- Get follow speed for a given pet level
+---@param level number
+---@return number speed
+function Config.getFollowSpeed(level)
+    local speed = Config.progression.followSpeed[1].speed
+    for _, tier in ipairs(Config.progression.followSpeed) do
+        if level >= tier.minLevel then
+            speed = tier.speed
+        end
+    end
+    return speed
+end
 
 -- ========================================
 --  Pets
@@ -429,7 +508,8 @@ Config.petShop = {
     enabled = true,
     ped = {
         model = 'a_m_m_farmer_01',
-        coords = vector4(561.59, 2752.89, 42.16, 180.37),
+        coords = vector4(561.27, 2740.83, 42.8, 179.59),
+        -- MLO coords (Patoche Pet Hospital): vector4(561.59, 2752.89, 42.16, 180.37)
     },
     blip = {
         sprite = 442,
@@ -446,7 +526,8 @@ Config.suppliesShop = {
     enabled = true,
     ped = {
         model = 'a_f_y_hipster_02',
-        coords = vector4(563.59, 2751.89, 42.16, 180.37),
+        coords = vector4(563.42, 2741.02, 42.8, 181.57),
+        -- MLO coords (Patoche Pet Hospital): vector4(563.59, 2751.89, 42.16, 180.37)
     },
     items = {
         { name = 'murderface_food',        label = 'Pet Food',              price = 100 },

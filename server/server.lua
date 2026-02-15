@@ -199,6 +199,7 @@ function Pet:saveData(src, hash, silent)
         end
         Update.food(petData)
         Update.thirst(petData)
+        Update.healthRegen(petData)
     else
         petData.metadata.health = 0
         if not silent then
@@ -241,6 +242,7 @@ AddEventHandler('playerDropped', function()
     local src = source
     Pet:cleanup(src)
     ClearCooldown(src)
+    ClearActivityCooldowns(src)
 end)
 
 -- ============================
@@ -268,24 +270,32 @@ end)
 -- ============================
 
 --- Common handler for all pet items (ox_inventory server.export callback)
---- ox_inventory's useExport wrapper prepends a nil arg, so first param is discarded.
----@param _ nil Placeholder (useExport passes nil)
+--- NOTE: ox_inventory's useExport calls exports[resource][export](nil, ...) but
+--- FiveM's cross-resource export marshaling drops the leading nil. The actual
+--- arguments received are (event, item, inventory, slot) — no placeholder.
 ---@param event string 'usingItem' | 'usedItem'
 ---@param item table Item definition from ox_inventory
 ---@param inventory table Full inventory object (has .id, .items)
 ---@param slot number Slot number
-local function handlePetItem(_, event, item, inventory, slot)
+local function handlePetItem(event, item, inventory, slot)
+    print(('[murderface-pets] ^3handlePetItem called^0: event=%s item=%s slot=%s'):format(
+        tostring(event), tostring(item and item.name or 'nil'), tostring(slot)))
+
     if event ~= 'usingItem' then return end
 
     local src = inventory.id
     local petCfg = Config.petsByItem[item.name]
-    if not petCfg then return false end
+    if not petCfg then
+        print(('[murderface-pets] ^1petCfg NOT FOUND^0 for item.name=%s'):format(tostring(item.name)))
+        return false
+    end
 
     local invItem = inventory.items[slot]
     local metadata = invItem and invItem.metadata
 
     -- First use: initialize if no hash
     if type(metadata) ~= 'table' or not metadata.hash then
+        print(('[murderface-pets] ^2Initializing new pet^0: %s for player %s'):format(item.name, src))
         InitPet(src, { name = item.name, slot = slot, metadata = metadata })
         TriggerClientEvent('ox_lib:notify', src, {
             description = Lang:t('success.pet_initialization_was_successful'),
@@ -304,6 +314,7 @@ local function handlePetItem(_, event, item, inventory, slot)
         return false
     end
 
+    print(('[murderface-pets] ^2Spawning pet^0: model=%s hash=%s'):format(petCfg.model, metadata.hash))
     Pet:spawnPet(src, petCfg.model, { name = item.name, slot = slot, metadata = metadata })
     return false
 end
@@ -311,46 +322,47 @@ end
 for _, pet in ipairs(Config.pets) do
     exports(pet.item, handlePetItem)
 end
+print(('[murderface-pets] ^2Registered %d pet item exports^0'):format(#Config.pets))
 
 -- ============================
 --    Supply Item Exports
 -- ============================
 
-exports(Config.items.food.name, function(_, event, _item, inventory)
+exports(Config.items.food.name, function(event, _item, inventory)
     if event == 'usingItem' then
         TriggerClientEvent('murderface-pets:client:feedPet', inventory.id)
         return false
     end
 end)
 
-exports(Config.items.collar.name, function(_, event, _item, inventory)
+exports(Config.items.collar.name, function(event, _item, inventory)
     if event == 'usingItem' then
         TriggerClientEvent('murderface-pets:client:transferOwnership', inventory.id)
         return false
     end
 end)
 
-exports(Config.items.nametag.name, function(_, event, item, inventory)
+exports(Config.items.nametag.name, function(event, item, inventory)
     if event == 'usingItem' then
         TriggerClientEvent('murderface-pets:client:renamePet', inventory.id, item)
         return false
     end
 end)
 
-exports(Config.items.firstaid.name, function(_, event)
+exports(Config.items.firstaid.name, function(event)
     if event == 'usingItem' then
         return false -- consumed via ox_target heal/revive interaction
     end
 end)
 
-exports(Config.items.groomingkit.name, function(_, event, _item, inventory)
+exports(Config.items.groomingkit.name, function(event, _item, inventory)
     if event == 'usingItem' then
         TriggerClientEvent('murderface-pets:client:groomPet', inventory.id)
         return false
     end
 end)
 
-exports(Config.items.waterbottle.name, function(_, event, item, inventory, slot)
+exports(Config.items.waterbottle.name, function(event, item, inventory, slot)
     if event == 'usingItem' then
         local src = inventory.id
         local refillCost = Config.items.waterbottle.refillCost
@@ -391,6 +403,7 @@ RegisterNetEvent('murderface-pets:server:feedPet', function(hash)
     if not petData then return end
 
     petData.metadata.food = math.min(100, petData.metadata.food + Config.balance.food.feedAmount)
+    Update.xpAward(src, petData, Config.xp.feeding)
     TriggerClientEvent('ox_lib:notify', src, {
         description = 'Feeding was successful, wait a moment for it to take effect!',
         type = 'success'
@@ -437,6 +450,7 @@ RegisterNetEvent('murderface-pets:server:healPet', function(hash, model, process
 
     if processType == 'Heal' then
         petData.metadata.health = math.min(maxHP, petData.metadata.health + healAmount)
+        Update.xpAward(src, petData, Config.xp.healing)
         Pet:saveData(src, hash)
         local msg = string.format(Lang:t('success.healing_was_successful'), petData.metadata.health, maxHP)
         TriggerClientEvent('murderface-pets:client:updateHealth', src, hash, petData.metadata.health)
@@ -464,6 +478,11 @@ RegisterNetEvent('murderface-pets:server:updatePetStats', function(hash, data)
 
     if data.key == 'XP' then
         Update.xp(src, petData)
+    elseif data.key == 'activity' then
+        local amount = Config.xp[data.action]
+        if amount and not IsOnActivityCooldown(src, data.action) then
+            Update.xpAward(src, petData, amount)
+        end
     else
         Update.health(src, data, petData)
     end
@@ -591,6 +610,7 @@ lib.callback.register('murderface-pets:server:decreaseThirst', function(source, 
     -- Reduce pet thirst
     local reduction = Config.balance.thirst.reductionPerDrink
     petData.metadata.thirst = math.max(0, petData.metadata.thirst - reduction)
+    Update.xpAward(src, petData, Config.xp.watering)
 
     TriggerClientEvent('ox_lib:notify', src, {
         description = Lang:t('success.successful_drinking'),
@@ -826,6 +846,37 @@ lib.addCommand('petrestore', {
             metadata.name or '?', row.item_name, metadata.level or 0, tostring(metadata.health or '?')),
         type = 'success'
     })
+end)
+
+-- ============================
+--   Startup Diagnostics
+-- ============================
+
+CreateThread(function()
+    Wait(5000) -- wait for ox_inventory to fully initialize
+    print('[murderface-pets] ^3Running startup diagnostics...^0')
+
+    -- Check if ox_inventory loaded our items with proper callbacks
+    local testItems = { 'murderface_husky', 'murderface_food' }
+    for _, itemName in ipairs(testItems) do
+        local itemDef = exports.ox_inventory:Items(itemName)
+        if itemDef then
+            print(('[murderface-pets] ^2ox_inventory has item "%s"^0: label=%s, consume=%s, cb=%s'):format(
+                itemName,
+                tostring(itemDef.label),
+                tostring(itemDef.consume),
+                tostring(itemDef.cb ~= nil and 'SET' or 'NIL')
+            ))
+        else
+            print(('[murderface-pets] ^1ox_inventory MISSING item "%s"^0 — items.lua not loaded or item not defined!'):format(itemName))
+        end
+    end
+
+    -- Verify Config.petsByItem lookup table
+    local petCount = 0
+    for _ in pairs(Config.petsByItem) do petCount = petCount + 1 end
+    print(('[murderface-pets] Config.petsByItem has %d entries'):format(petCount))
+    print('[murderface-pets] ^3Diagnostics complete.^0')
 end)
 
 -- ============================

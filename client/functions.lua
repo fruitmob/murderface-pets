@@ -63,7 +63,13 @@ function TaskFollowTargetedPlayer(follower, targetPlayer, distanceToStopAt, skip
         TaskGoToCoordAnyMeans(follower, GetEntityCoords(targetPlayer), 10.0, 0, 0, 0, 0)
         Wait(5000)
     end
-    TaskFollowToOffsetOfEntity(follower, targetPlayer, 2.5, 2.5, 2.5, 5.0, 10.0, distanceToStopAt, 1)
+    -- Use level-based speed if the follower is an active pet
+    local moveSpeed = 5.0
+    local activePed = ActivePed:read()
+    if activePed and activePed.entity == follower then
+        moveSpeed = Config.getFollowSpeed(activePed.item.metadata.level or 0)
+    end
+    TaskFollowToOffsetOfEntity(follower, targetPlayer, 2.5, 2.5, 2.5, moveSpeed, 10.0, distanceToStopAt, 1)
     return true
 end
 
@@ -105,6 +111,22 @@ end
 --    Ped Management
 -- ============================
 
+-- Custom relationship group: ambient peds won't attack/flee our pets
+local petGroupHash
+do
+    local _, hash = AddRelationshipGroup('MFPETS_COMPANION')
+    petGroupHash = hash
+
+    local civGroups = { 'CIVMALE', 'CIVFEMALE', 'COP', 'SECURITY_GUARD', 'PRIVATE_SECURITY', 'FIREMAN', 'MEDIC' }
+    for _, group in ipairs(civGroups) do
+        local gh = GetHashKey(group)
+        SetRelationshipBetweenGroups(1, petGroupHash, gh) -- pet respects civs
+        SetRelationshipBetweenGroups(1, gh, petGroupHash) -- civs respect pet
+    end
+    SetRelationshipBetweenGroups(0, petGroupHash, GetHashKey('PLAYER')) -- companion with player
+    SetRelationshipBetweenGroups(0, GetHashKey('PLAYER'), petGroupHash)
+end
+
 function DeletePed(ped)
     if DoesEntityExist(ped) then
         DeleteEntity(ped)
@@ -119,6 +141,7 @@ function CreateAPed(hash, pos)
     end
     SetBlockingOfNonTemporaryEvents(ped, true)
     SetPedFleeAttributes(ped, 0, 0)
+    SetPedRelationshipGroupHash(ped, petGroupHash)
     SetModelAsNoLongerNeeded(hash)
     return ped
 end
@@ -272,6 +295,8 @@ function AttackTargetedPed(attackerPed, targetPed)
     while not IsPedDeadOrDying(targetPed, 0) do
         Wait(1000)
     end
+    -- Restore companion group so civs stop being hostile after hunt
+    SetPedRelationshipGroupHash(attackerPed, petGroupHash)
     TaskFollowTargetedPlayer(attackerPed, PlayerPedId(), 3.0, false)
 end
 
@@ -305,6 +330,9 @@ function attackLogic(alreadyHunting)
                 DrawMarker(2, pedCoord.x, pedCoord.y, pedCoord.z + 2, 0.0, 0.0, 0.0, 0.0, 180.0, 0.0, 1.0, 1.0, 1.0, 255, 128, 0, 50, false, true, 2, nil, nil, false)
 
                 if IsPedDeadOrDying(entity) then
+                    -- Award hunt kill XP
+                    TriggerServerEvent('murderface-pets:server:updatePetStats',
+                        activePed.item.metadata.hash, { key = 'activity', action = 'huntKill' })
                     alreadyHunting.state = false
                     return true
                 end
@@ -313,6 +341,9 @@ function attackLogic(alreadyHunting)
                     return true
                 end
             end
+            -- Prey died in the outer loop
+            TriggerServerEvent('murderface-pets:server:updatePetStats',
+                activePed.item.metadata.hash, { key = 'activity', action = 'huntKill' })
             alreadyHunting.state = false
             return true
         end
@@ -353,6 +384,9 @@ function HuntandGrab(plyped, activePed)
                     while not IsPedDeadOrDying(entity) do
                         Wait(250)
                     end
+                    -- Award hunt kill XP
+                    TriggerServerEvent('murderface-pets:server:updatePetStats',
+                        activePed.item.metadata.hash, { key = 'activity', action = 'huntKill' })
                     SetEntityCoords(entity, GetOffsetFromEntityInWorldCoords(pet, 0.0, 0.25, 0.0))
                     AttachEntityToEntity(entity, pet, 11816, 0.05, 0.05, 0.5, 0.0, 0.0, 0.0, false, false, false, false, 2, true)
                     break
@@ -442,6 +476,9 @@ function SearchLogic(_, activePed)
         SetAnimalMood(activePed.entity, 1)
         PlayAnimalVocalization(activePed.entity, 3, 'bark')
         Anims.play(activePed.entity, activePed.animClass, 'misc', { clip = 'indicate_high' })
+        -- Award K9 search XP
+        TriggerServerEvent('murderface-pets:server:updatePetStats',
+            activePed.item.metadata.hash, { key = 'activity', action = 'k9Search' })
     end
     finished = true
 end
@@ -486,6 +523,9 @@ function k9SearchVehicle(veh, activePed)
             SetAnimalMood(activePed.entity, 1)
             PlayAnimalVocalization(activePed.entity, 3, 'bark')
             Anims.play(activePed.entity, activePed.animClass, 'misc', { clip = 'indicate_high' })
+            -- Award K9 search XP
+            TriggerServerEvent('murderface-pets:server:updatePetStats',
+                activePed.item.metadata.hash, { key = 'activity', action = 'k9Search' })
         else
             Anims.play(activePed.entity, activePed.animClass, 'sit')
         end

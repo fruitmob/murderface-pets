@@ -73,7 +73,7 @@ end
 ---@param level number Current pet level
 ---@return number xpGain
 local function xpPerTick(level)
-    return math.max(1, math.floor(10 - (level * 0.15)))
+    return math.max(1, math.floor(Config.xp.passive - (level * 0.15)))
 end
 
 -- ============================
@@ -232,6 +232,9 @@ function Update.xp(src, petData)
         local msg = string.format(Lang:t('info.level_up'), petData.metadata.name, newLevel)
         TriggerClientEvent('ox_lib:notify', src, { description = msg, type = 'inform' })
     end
+
+    TriggerClientEvent('murderface-pets:client:syncXP', src,
+        petData.metadata.hash, petData.metadata.XP, newLevel)
 end
 
 --- Sync pet health from game entity to metadata
@@ -281,4 +284,105 @@ function Update.thirst(petData)
         return
     end
     petData.metadata.thirst = math.min(100, petData.metadata.thirst + bal.increasePerTick)
+end
+
+-- ============================
+--   Activity XP Cooldowns
+-- ============================
+
+local activityCooldowns = {} -- keyed by "src:action"
+
+local activityCooldownTimes = {
+    huntKill = 30,
+    petting  = 60,
+    trick    = 15,
+    k9Search = 30,
+}
+
+--- Check if a player is on cooldown for a specific XP action.
+--- Returns true if still on cooldown; otherwise stamps the time and returns false.
+---@param src number Player source
+---@param action string Action name
+---@return boolean onCooldown
+function IsOnActivityCooldown(src, action)
+    local key = src .. ':' .. action
+    local cd = activityCooldownTimes[action]
+    if not cd then return false end -- no cooldown for this action
+
+    local now = os.time()
+    local last = activityCooldowns[key]
+    if last and (now - last) < cd then
+        return true
+    end
+    activityCooldowns[key] = now
+    return false
+end
+
+--- Clean up activity cooldowns for a disconnecting player
+---@param src number Player source
+function ClearActivityCooldowns(src)
+    local prefix = src .. ':'
+    for key in pairs(activityCooldowns) do
+        if key:sub(1, #prefix) == prefix then
+            activityCooldowns[key] = nil
+        end
+    end
+end
+
+-- ============================
+--     XP Award (Activity)
+-- ============================
+
+--- Award XP from an active action (hunt, trick, petting, etc.)
+--- Handles level-up checks and milestone celebrations.
+---@param src number Player source
+---@param petData table Active pet entry from Pet.players
+---@param amount number XP to award
+function Update.xpAward(src, petData, amount)
+    local currentLevel = levelFromXp(petData.metadata.XP)
+    if currentLevel >= Config.balance.maxLevel then return end
+
+    petData.metadata.XP = petData.metadata.XP + amount
+    local newLevel = levelFromXp(petData.metadata.XP)
+
+    if newLevel > currentLevel then
+        petData.metadata.level = newLevel
+        local msg = string.format(Lang:t('info.level_up'), petData.metadata.name, newLevel)
+        TriggerClientEvent('ox_lib:notify', src, { description = msg, type = 'inform' })
+
+        -- Check milestone
+        for _, milestone in ipairs(Config.progression.milestones) do
+            if newLevel == milestone then
+                TriggerClientEvent('murderface-pets:client:milestone', src,
+                    petData.metadata.hash, newLevel, petData.metadata.name)
+                break
+            end
+        end
+    end
+
+    TriggerClientEvent('murderface-pets:client:syncXP', src,
+        petData.metadata.hash, petData.metadata.XP, newLevel)
+end
+
+-- ============================
+--     Health Regen
+-- ============================
+
+--- Passive health regeneration for high-level pets
+---@param petData table Active pet entry from Pet.players
+function Update.healthRegen(petData)
+    local regenLevel = Config.progression.healthRegenLevel
+    local level = petData.metadata.level or 0
+    if level < regenLevel then return end
+
+    -- Only regen if alive and not at max HP
+    if petData.metadata.health <= 100 then return end
+
+    local petCfg = Config.petsByItem[petData.itemName]
+    if not petCfg then return end
+
+    local maxHP = petCfg.maxHealth
+    if petData.metadata.health >= maxHP then return end
+
+    petData.metadata.health = math.min(maxHP, petData.metadata.health + Config.progression.healthRegenAmount)
 end
