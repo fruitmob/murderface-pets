@@ -31,6 +31,7 @@ local menu = {
         triggerNotification = { 'PETNAME is now following you!', 'PETNAME failed to follow you!' },
         action = function(plyped, activePed)
             doSomethingIfPedIsInsideVehicle(activePed.entity)
+            SetWaiting(activePed.item.metadata.hash, false)
             return TaskFollowTargetedPlayer(activePed.entity, plyped, 3.0, false)
         end
     },
@@ -126,6 +127,7 @@ local menu = {
         description = 'Stay at current position',
         action = function(_, activePed)
             doSomethingIfPedIsInsideVehicle(activePed.entity)
+            SetWaiting(activePed.item.metadata.hash, true)
             ClearPedTasks(activePed.entity)
         end
     },
@@ -165,6 +167,47 @@ local menu = {
         end,
         action = function(_, activePed)
             StopGuard(activePed.item.metadata.hash)
+            return true
+        end,
+    },
+    {
+        label = Lang:t('menu.action_menu.aggro_enable'),
+        TYPE = 'AggroEnable',
+        icon = 'bolt',
+        iconColor = '#f76707',
+        description = 'Pet auto-attacks threats to you',
+        triggerNotification = { 'PETNAME aggro mode enabled!', 'PETNAME cannot use aggro mode!' },
+        show = function(activePed)
+            if not Config.aggro or not Config.aggro.enabled then return false end
+            local hash = activePed.item.metadata.hash
+            if IsAggroEnabled(hash) then return false end
+            if IsGuarding(hash) then return false end
+            local species = activePed.petConfig and activePed.petConfig.species
+            if not species then return false end
+            for _, s in ipairs(Config.aggro.speciesAllowed) do
+                if species == s then
+                    return (activePed.item.metadata.level or 0) >= (Config.progression.minAggroLevel or 10)
+                end
+            end
+            return false
+        end,
+        action = function(_, activePed)
+            StartAggro(activePed.item.metadata.hash)
+            return true
+        end,
+    },
+    {
+        label = Lang:t('menu.action_menu.aggro_disable'),
+        TYPE = 'AggroDisable',
+        icon = 'bolt',
+        iconColor = '#868e96',
+        description = 'Disable auto-attack mode',
+        triggerNotification = { 'PETNAME aggro mode disabled!', 'PETNAME is not in aggro mode!' },
+        show = function(activePed)
+            return IsAggroEnabled(activePed.item.metadata.hash)
+        end,
+        action = function(_, activePed)
+            StopAggro(activePed.item.metadata.hash)
             return true
         end,
     },

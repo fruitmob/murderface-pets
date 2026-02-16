@@ -46,6 +46,9 @@ function ActivePed:remove(hash)
     if not petData then return end
 
     StopGuard(hash)
+    StopAggro(hash)
+    SetWaiting(hash, false)
+    SetBusy(hash, false)
 
     local netId = NetworkGetNetworkIdFromEntity(petData.entity)
     if netId then
@@ -105,6 +108,42 @@ function ActivePed:petsList()
         }
     end
     return list
+end
+
+-- ============================
+--     Waiting State
+-- ============================
+
+local waitingPets = {} -- { [hash] = true }
+
+function IsWaiting(hash)
+    return waitingPets[hash] == true
+end
+
+function SetWaiting(hash, val)
+    waitingPets[hash] = val or nil
+end
+
+function ClearAllWaiting()
+    waitingPets = {}
+end
+
+-- ============================
+--     Busy State (task lock)
+-- ============================
+
+local busyPets = {} -- { [hash] = true }
+
+function IsBusy(hash)
+    return busyPets[hash] == true
+end
+
+function SetBusy(hash, val)
+    busyPets[hash] = val or nil
+end
+
+local function ClearAllBusy()
+    busyPets = {}
 end
 
 -- ============================
@@ -379,7 +418,13 @@ end)
 --     AFK Wandering
 -- ============================
 
-local function afkWandering(timeOut, plyPed, ped, animClass)
+local function afkWandering(timeOut, plyPed, ped, animClass, hash)
+    -- Only run idle animations for pets explicitly told to Wait
+    if not IsWaiting(hash) then
+        timeOut[1] = 0
+        return
+    end
+
     local coord = GetEntityCoords(plyPed)
     if IsPedStopped(plyPed) and not IsPedInAnyVehicle(plyPed, false) then
         if timeOut[1] < Config.balance.afk.resetAfter then
@@ -404,6 +449,56 @@ local function afkWandering(timeOut, plyPed, ped, animClass)
     end
 end
 
+local enforceFollowCooldowns = {} -- { [hash] = gameTimer }
+
+--- Re-issue follow if pet has drifted too far from the player
+---@param ped number Pet entity
+---@param plyPed number Player entity
+---@param hash string Pet hash
+local function enforceFollow(ped, plyPed, hash)
+    -- Bail if entities are invalid
+    if not DoesEntityExist(ped) or plyPed == 0 then return end
+
+    -- Skip pets in special states
+    if IsWaiting(hash) then return end
+    if IsGuarding(hash) then return end
+    if IsInAggroCombat(hash) then return end
+    if IsBusy(hash) then return end
+    if IsPedInCombat(ped) then return end
+    if IsPedInAnyVehicle(ped, false) then return end
+    if IsPedInAnyVehicle(plyPed, false) then return end
+    if IsEntityDead(ped) then return end
+
+    local petPos = GetEntityCoords(ped)
+    local plyPos = GetEntityCoords(plyPed)
+    local dist = #(petPos - plyPos)
+
+    -- Teleport failsafe: if pet is extremely far, warp it close
+    if dist > 50.0 then
+        local spawnPos = getSpawnLocation(plyPed)
+        SetEntityCoords(ped, spawnPos.x, spawnPos.y, spawnPos.z, false, false, false, false)
+        local activePed = ActivePed:findByHash(hash)
+        local moveSpeed = activePed and Config.getFollowSpeed(activePed.item.metadata.level or 0) or 5.0
+        TaskFollowToOffsetOfEntity(ped, plyPed, 2.5, 2.5, 2.5, moveSpeed, 10.0, 3.0, 1)
+        enforceFollowCooldowns[hash] = GetGameTimer()
+        return
+    end
+
+    -- Only re-issue follow when pet has drifted significantly (20m+)
+    if dist > 20.0 then
+        -- Cooldown: don't re-issue more than once every 5 seconds
+        local now = GetGameTimer()
+        local lastIssued = enforceFollowCooldowns[hash] or 0
+        if now - lastIssued < 5000 then return end
+        enforceFollowCooldowns[hash] = now
+
+        -- Re-issue follow directly (skip ClearPedTasks to avoid visible stutter)
+        local activePed = ActivePed:findByHash(hash)
+        local moveSpeed = activePed and Config.getFollowSpeed(activePed.item.metadata.level or 0) or 5.0
+        TaskFollowToOffsetOfEntity(ped, plyPed, 2.5, 2.5, 2.5, moveSpeed, 10.0, 3.0, 1)
+    end
+end
+
 -- ============================
 --     Active Pet Thread
 -- ============================
@@ -421,7 +516,9 @@ function createActivePetThread(ped, item)
 
         while DoesEntityExist(ped) and not finished do
             local plyPed = PlayerPedId() -- refresh each tick; handle changes on death/respawn
-            afkWandering(timeOut, plyPed, ped, savedData.animClass)
+            local hash = item.metadata.hash
+            afkWandering(timeOut, plyPed, ped, savedData.animClass, hash)
+            enforceFollow(ped, plyPed, hash)
 
             -- Update server every N seconds
             if tmpcount >= count then
@@ -447,6 +544,8 @@ function createActivePetThread(ped, item)
             -- Pet has died — keep dead until revived/despawned
             if IsPedDeadOrDying(savedData.entity, true) then
                 StopGuard(savedData.item.metadata.hash)
+                StopAggro(savedData.item.metadata.hash)
+                SetWaiting(savedData.item.metadata.hash, false)
                 local c_health = GetEntityHealth(savedData.entity)
                 if c_health <= 100 then
                     TriggerServerEvent('murderface-pets:server:updatePetStats',
@@ -493,6 +592,9 @@ end)
 
 RegisterNetEvent('murderface-pets:client:despawnPet', function(hash, instant)
     StopGuard(hash)
+    StopAggro(hash)
+    SetWaiting(hash, false)
+    SetBusy(hash, false)
     if instant then
         ActivePed:remove(hash)
         TriggerServerEvent('murderface-pets:server:setAsDespawned', hash)
@@ -521,6 +623,9 @@ end)
 
 RegisterNetEvent('qbx_core:client:onLogout', function()
     StopAllGuards()
+    StopAllAggro()
+    ClearAllWaiting()
+    ClearAllBusy()
     ActivePed:removeAll()
 end)
 
@@ -796,12 +901,14 @@ CreateThread(function()
 
         if inVehicle and not wasInVehicle then
             -- Owner just got in a vehicle — board all pets that fit
+            -- Skip invisible/scripted vehicles (e.g. skateboard's hidden BMX)
             local vehicle = GetVehiclePedIsUsing(plyPed)
-            if vehicle and vehicle ~= 0 then
+            if vehicle and vehicle ~= 0 and IsEntityVisible(vehicle) then
                 for _, petData in pairs(ActivePed.pets) do
                     local hash = petData.item and petData.item.metadata and petData.item.metadata.hash
                     if DoesEntityExist(petData.entity) and not IsPedInAnyVehicle(petData.entity, false)
-                        and not (hash and IsGuarding(hash)) then
+                        and not (hash and IsGuarding(hash))
+                        and not (hash and IsInAggroCombat(hash)) then
                         putPetInVehicle(vehicle, petData.entity)
                     end
                 end

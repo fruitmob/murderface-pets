@@ -4,6 +4,10 @@
 local guardState = {}       -- { [petHash] = { pos = vector3, active = bool } }
 local notifiedPeds = {}     -- { [petHash] = { [pedHandle] = true } } — prevent notification spam
 
+-- Reuse relationship groups created in functions.lua (AddRelationshipGroup is idempotent)
+local _, hunterGroupHash = AddRelationshipGroup('MFPETS_HUNTER')
+local _, petGroupHash = AddRelationshipGroup('MFPETS_COMPANION')
+
 -- ============================
 --       Public Queries
 -- ============================
@@ -92,10 +96,17 @@ local function startGuardThread(petEntity, hash, guardPos, activePed)
                         foundIntruder = true
                         currentInterval = cfg.checkInterval -- reset to base on combat
 
+                        -- Set up hostile relationship (same pattern as AttackTargetedPed)
+                        SetBlockingOfNonTemporaryEvents(petEntity, false)
+                        local targetGroup = GetPedRelationshipGroupHash(ped)
+                        SetPedRelationshipGroupHash(petEntity, hunterGroupHash)
+                        SetRelationshipBetweenGroups(5, hunterGroupHash, targetGroup) -- 5 = Hate
+                        SetCanAttackFriendly(petEntity, true, false)
+
                         -- Attack intruder
                         TaskCombatPed(petEntity, ped, 0, 16)
 
-                        -- Notify owner (once per ped)
+                        -- Notify owner (once per ped per guard session)
                         if cfg.notifyOwner and not notifiedPeds[hash][ped] then
                             notifiedPeds[hash][ped] = true
                             lib.notify({
@@ -110,17 +121,27 @@ local function startGuardThread(petEntity, hash, guardPos, activePed)
                         TriggerServerEvent('murderface-pets:server:updatePetStats',
                             hash, { key = 'activity', action = 'guarding' })
 
-                        -- Wait for this combat encounter to resolve before scanning again
+                        -- Wait for combat to resolve, re-engaging if pet drops combat
                         while guardState[hash] and guardState[hash].active
                               and DoesEntityExist(petEntity) and not IsEntityDead(petEntity)
                               and DoesEntityExist(ped) and not IsEntityDead(ped)
                               and #(GetEntityCoords(petEntity) - GetEntityCoords(ped)) < radius + 5.0 do
+                            if not IsPedInCombat(petEntity) then
+                                TaskCombatPed(petEntity, ped, 0, 16)
+                            end
                             Wait(1000)
                         end
 
-                        -- Clear notification tracking for this ped
-                        if notifiedPeds[hash] then
+                        -- Only clear notification tracking if ped is dead/gone
+                        if notifiedPeds[hash] and (not DoesEntityExist(ped) or IsEntityDead(ped)) then
                             notifiedPeds[hash][ped] = nil
+                        end
+
+                        -- Restore passive companion state
+                        if DoesEntityExist(petEntity) and not IsEntityDead(petEntity) then
+                            SetBlockingOfNonTemporaryEvents(petEntity, true)
+                            SetCanAttackFriendly(petEntity, false, false)
+                            SetPedRelationshipGroupHash(petEntity, petGroupHash)
                         end
 
                         -- Return to guard position if still active
@@ -179,6 +200,10 @@ function StopGuard(hash)
 
     local activePed = ActivePed:findByHash(hash)
     if activePed and DoesEntityExist(activePed.entity) and not IsEntityDead(activePed.entity) then
+        -- Restore passive companion state (may have been in hunter group mid-combat)
+        SetBlockingOfNonTemporaryEvents(activePed.entity, true)
+        SetCanAttackFriendly(activePed.entity, false, false)
+        SetPedRelationshipGroupHash(activePed.entity, petGroupHash)
         ClearPedTasks(activePed.entity)
         TaskFollowTargetedPlayer(activePed.entity, PlayerPedId(), 3.0, false)
     end
@@ -188,5 +213,166 @@ end
 function StopAllGuards()
     for hash in pairs(guardState) do
         StopGuard(hash)
+    end
+end
+
+-- ============================
+--   Aggro / Defense Mode
+-- ============================
+
+local aggroState = {}
+local aggroThreadRunning = false
+
+function IsAggroEnabled(hash)
+    return aggroState[hash] ~= nil and aggroState[hash].active == true
+end
+
+function IsInAggroCombat(hash)
+    return aggroState[hash] ~= nil and aggroState[hash].inCombat == true
+end
+
+local function activeAggroCount()
+    local count = 0
+    for _, state in pairs(aggroState) do
+        if state.active then count = count + 1 end
+    end
+    return count
+end
+
+local AGGRO_COMBAT_TIMEOUT = 30000 -- 30s max before resetting stuck inCombat
+
+local function startAggroThread()
+    if aggroThreadRunning then return end
+    aggroThreadRunning = true
+
+    CreateThread(function()
+        local cfg = Config.aggro
+
+        while activeAggroCount() > 0 do
+            local playerPed = PlayerPedId()
+            local playerPos = GetEntityCoords(playerPed)
+
+            if not IsPedDeadOrDying(playerPed, false) and not IsPedInAnyVehicle(playerPed, false) then
+                local pedPool = GetGamePool('CPed')
+
+                for hash, state in pairs(aggroState) do
+                    if not state.active then goto nextAggro end
+
+                    local petData = ActivePed:findByHash(hash)
+                    if not petData
+                       or not DoesEntityExist(petData.entity)
+                       or IsEntityDead(petData.entity)
+                       or IsPedInAnyVehicle(petData.entity, false)
+                       or IsGuarding(hash) then
+                        goto nextAggro
+                    end
+
+                    -- Stuck combat recovery: if inCombat for too long or target gone, reset
+                    if state.inCombat then
+                        local target = state.combatTarget
+                        local elapsed = GetGameTimer() - (state.combatStart or 0)
+                        if elapsed > AGGRO_COMBAT_TIMEOUT
+                           or not target
+                           or not DoesEntityExist(target)
+                           or IsEntityDead(target) then
+                            state.inCombat = false
+                            state.combatTarget = nil
+                            state.combatStart = nil
+                        else
+                            goto nextAggro -- still in valid combat, skip scan
+                        end
+                    end
+
+                    do -- scan for threats
+                        local bestTarget = nil
+                        local bestDist = math.huge
+
+                        for _, ped in ipairs(pedPool) do
+                            if ped ~= petData.entity
+                               and ped ~= playerPed
+                               and not IsEntityDead(ped)
+                               and not IsPedInAnyVehicle(ped, false) then
+
+                                if not cfg.attackPlayers and IsPedAPlayer(ped) then
+                                    goto aggroContinue
+                                end
+
+                                local dist = #(playerPos - GetEntityCoords(ped))
+                                if dist <= cfg.detectionRange then
+                                    local isDefensive = HasEntityBeenDamagedByEntity(playerPed, ped, true)
+                                    local isOffensive = HasEntityBeenDamagedByEntity(ped, playerPed, true)
+
+                                    if (isDefensive or isOffensive) and dist < bestDist then
+                                        bestDist = dist
+                                        bestTarget = ped
+                                    end
+                                end
+
+                                ::aggroContinue::
+                            end
+                        end
+
+                        if bestTarget then
+                            state.inCombat = true
+                            state.combatTarget = bestTarget
+                            state.combatStart = GetGameTimer()
+
+                            if cfg.notifyOwner then
+                                local petName = petData.item.metadata.name or 'Pet'
+                                lib.notify({
+                                    title = petName,
+                                    description = Lang:t('menu.action_menu.aggro_engaging'),
+                                    type = 'warning',
+                                    duration = 5000,
+                                })
+                            end
+
+                            TriggerServerEvent('murderface-pets:server:updatePetStats',
+                                hash, { key = 'activity', action = 'defending' })
+
+                            local capturedHash = hash
+                            local capturedTarget = bestTarget
+                            CreateThread(function()
+                                AttackTargetedPed(petData.entity, capturedTarget)
+                                if aggroState[capturedHash] then
+                                    aggroState[capturedHash].inCombat = false
+                                    aggroState[capturedHash].combatTarget = nil
+                                    aggroState[capturedHash].combatStart = nil
+                                end
+                            end)
+                        end
+                    end
+
+                    ::nextAggro::
+                end
+
+                ClearEntityLastDamageEntity(playerPed)
+            end
+
+            Wait(cfg.checkInterval)
+        end
+
+        aggroThreadRunning = false
+    end)
+end
+
+function StartAggro(hash)
+    aggroState[hash] = { active = true, inCombat = false }
+    -- Recovery: if aggroThreadRunning is stuck from a previous error, reset it
+    if aggroThreadRunning and activeAggroCount() <= 1 then
+        aggroThreadRunning = false
+    end
+    startAggroThread()
+end
+
+function StopAggro(hash)
+    if not aggroState[hash] then return end
+    aggroState[hash].active = false
+    aggroState[hash] = nil
+end
+
+function StopAllAggro()
+    for hash in pairs(aggroState) do
+        StopAggro(hash)
     end
 end

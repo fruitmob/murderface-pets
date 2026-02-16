@@ -166,6 +166,10 @@ function Pet:setAsDespawned(src, hash)
     if self.players[src] then
         self.players[src][hash] = nil
     end
+    -- Also clear any pending spawn flag so the pet can be re-summoned immediately
+    if pendingSpawns[src] then
+        pendingSpawns[src][hash] = nil
+    end
 end
 
 --- Spawn or toggle-despawn a pet
@@ -185,7 +189,14 @@ function Pet:spawnPet(src, model, item)
     -- Prevent double-spawn race condition (client hasn't registered yet)
     if pendingSpawns[src] and pendingSpawns[src][hash] then
         local elapsed = os.time() - pendingSpawns[src][hash]
-        if elapsed < 30 then return end
+        if elapsed < 10 then
+            TriggerClientEvent('ox_lib:notify', src, {
+                description = 'Your pet is still loading, please wait',
+                type = 'info',
+                duration = 3000,
+            })
+            return
+        end
         pendingSpawns[src][hash] = nil -- timed out, allow retry
     end
 
@@ -197,7 +208,7 @@ function Pet:spawnPet(src, model, item)
     if pendingSpawns[src] then
         local now = os.time()
         for _, t in pairs(pendingSpawns[src]) do
-            if now - t < 30 then count = count + 1 end
+            if now - t < 10 then count = count + 1 end
         end
     end
     if count >= Config.maxActivePets then

@@ -283,12 +283,15 @@ end
 -- ============================
 
 function goThere(ped)
+    local activePed = ActivePed:read()
+    local hash = activePed and activePed.item and activePed.item.metadata and activePed.item.metadata.hash
     while true do
         local color = { r = 2, g = 241, b = 181, a = 200 }
         local position = GetEntityCoords(PlayerPedId())
         local coords = RayCastGamePlayCamera(1000.0)
         Draw2DText('Press ~g~E~w~ To go there', 4, { 255, 255, 255 }, 0.4, 0.43, 0.913)
         if IsControlJustReleased(0, 38) then
+            if hash then SetBusy(hash, true) end
             TaskGoToCoordAnyMeans(ped, coords, 10.0, 0, 0, 0, 0)
             -- Monitor arrival then resume following
             CreateThread(function()
@@ -299,6 +302,7 @@ function goThere(ped)
                     Wait(1000)
                 end
                 Wait(2000)
+                if hash then SetBusy(hash, false) end
                 if DoesEntityExist(ped) and not IsEntityDead(ped) then
                     TaskFollowTargetedPlayer(ped, PlayerPedId(), 3.0, true)
                 end
@@ -345,7 +349,8 @@ function AttackTargetedPed(attackerPed, targetPed)
     TaskCombatPed(attackerPed, targetPed, 0, 16)
 
     -- Re-engage loop: if pet somehow drops combat, re-issue the task
-    while not IsPedDeadOrDying(targetPed, 0) do
+    while DoesEntityExist(targetPed) and not IsPedDeadOrDying(targetPed, 0) do
+        if not DoesEntityExist(attackerPed) or IsEntityDead(attackerPed) then break end
         if not IsPedInCombat(attackerPed) then
             TaskCombatPed(attackerPed, targetPed, 0, 16)
         end
@@ -378,6 +383,8 @@ function attackLogic(alreadyHunting)
             end
 
             local pet = activePed.entity
+            local hash = activePed.item.metadata.hash
+            SetBusy(hash, true)
             AttackTargetedPed(pet, entity)
             alreadyHunting.state = true
 
@@ -391,19 +398,22 @@ function attackLogic(alreadyHunting)
                 if IsPedDeadOrDying(entity) then
                     -- Award hunt kill XP
                     TriggerServerEvent('murderface-pets:server:updatePetStats',
-                        activePed.item.metadata.hash, { key = 'activity', action = 'huntKill' })
+                        hash, { key = 'activity', action = 'huntKill' })
                     alreadyHunting.state = false
+                    SetBusy(hash, false)
                     return true
                 end
                 if dist >= Config.chaseDistance then
                     alreadyHunting.state = false
+                    SetBusy(hash, false)
                     return true
                 end
             end
             -- Prey died in the outer loop
             TriggerServerEvent('murderface-pets:server:updatePetStats',
-                activePed.item.metadata.hash, { key = 'activity', action = 'huntKill' })
+                hash, { key = 'activity', action = 'huntKill' })
             alreadyHunting.state = false
+            SetBusy(hash, false)
             return true
         end
 
@@ -417,6 +427,7 @@ end
 -- ============================
 
 function HuntandGrab(plyped, activePed)
+    local hash = activePed.item.metadata.hash
     while true do
         Wait(0)
         local color = { r = 2, g = 241, b = 181, a = 200 }
@@ -431,6 +442,7 @@ function HuntandGrab(plyped, activePed)
                 return
             end
 
+            SetBusy(hash, true)
             TaskFollowToOffsetOfEntity(pet, entity, 0.0, 0.0, 0.0, 5.0, 10.0, 1.0, 1)
             while true do
                 local pedCoord = GetEntityCoords(entity)
@@ -445,7 +457,7 @@ function HuntandGrab(plyped, activePed)
                     end
                     -- Award hunt kill XP
                     TriggerServerEvent('murderface-pets:server:updatePetStats',
-                        activePed.item.metadata.hash, { key = 'activity', action = 'huntKill' })
+                        hash, { key = 'activity', action = 'huntKill' })
                     SetEntityCoords(entity, GetOffsetFromEntityInWorldCoords(pet, 0.0, 0.25, 0.0))
                     AttachEntityToEntity(entity, pet, 11816, 0.05, 0.05, 0.5, 0.0, 0.0, 0.0, false, false, false, false, 2, true)
                     break
@@ -460,11 +472,13 @@ function HuntandGrab(plyped, activePed)
                 if (entity and dist < 3.0) or dist > 50.0 then
                     DetachEntity(entity, true, false)
                     ClearPedSecondaryTask(pet)
+                    SetBusy(hash, false)
                     TaskFollowTargetedPlayer(pet, PlayerPedId(), 3.0, true)
                     return
                 end
                 Wait(1000)
             end
+            SetBusy(hash, false)
             return
         end
 

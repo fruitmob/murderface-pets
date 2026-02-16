@@ -52,6 +52,15 @@ Config.guard = {
     combatMovement = 3,         -- 0=stationary, 1=defensive, 2=offensive, 3=suicidal
 }
 
+Config.aggro = {
+    enabled = true,
+    checkInterval = 500,            -- ms between threat scans
+    detectionRange = 25.0,          -- meters from owner to detect threats
+    attackPlayers = true,           -- true = aggro on player attackers too
+    speciesAllowed = { 'dog', 'wild' },
+    notifyOwner = true,
+}
+
 Config.stressRelief = {
     enabled = true,              -- set true if you have a HUD with stress mechanics
     event = 'hud:server:RelieveStress',
@@ -166,6 +175,7 @@ Config.xp = {
     healing    = 10,
     guarding   = 5,
     tracking   = 30,
+    defending  = 25,
 }
 
 -- Seconds between XP awards for the same activity (prevents spam)
@@ -176,6 +186,7 @@ Config.activityCooldowns = {
     k9Search = 30,
     guarding = 60,
     tracking = 30,
+    defending = 30,
 }
 
 -- ========================================
@@ -192,6 +203,7 @@ Config.progression = {
         { minLevel = 30, speed = 5.0 },
     },
     minGuardLevel          = 10,
+    minAggroLevel          = 10,
     minSpecializationLevel = 20,
     milestones = { 10, 25, 50 },
 }
