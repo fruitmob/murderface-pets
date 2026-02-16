@@ -2,7 +2,7 @@
 
 **A free, open-source pet companion system for FiveM — built on the Qbox/ox stack.**
 
-Most pet scripts on Tebex charge $15–$30 for a fraction of what this does. murderface-pets gives you 27 animals (16 vanilla + 11 addon), a full XP and progression system, K9 police functionality, hunting, leash system, guard mode, specializations, stray taming, breeding, and more — all config-driven, all free.
+Most pet scripts on Tebex charge $15–$30 for a fraction of what this does. murderface-pets gives you 16 vanilla GTA V animals, a full XP and progression system, K9 police functionality, hunting, guard mode, specializations, stray taming, breeding, and more — all config-driven, all free.
 
 ## Why This Script
 
@@ -14,8 +14,8 @@ Most pet scripts on Tebex charge $15–$30 for a fraction of what this does. mur
 
 ## Features at a Glance
 
-### 27 Unique Companions
-Dogs, cats, big cats, primates, small animals, and addon breeds — each with per-model health, pricing, animations, and trait flags.
+### 16 Vanilla Companions
+Dogs, cats, big cats, primates, and small animals — each with per-model health, pricing, animations, and trait flags. All use vanilla GTA V models, no streaming required.
 
 | Category | Animals | Highlights |
 |----------|---------|------------|
@@ -25,8 +25,6 @@ Dogs, cats, big cats, primates, small animals, and addon breeds — each with pe
 | Wild | Black Panther, Mountain Lion, Coyote | Hunting predators |
 | Small Animals | Chicken, Rabbit | Idle companions |
 | Primates | Chimpanzee, Rhesus Monkey | Build 3258+ |
-| Addon Dogs | K9 M/F, K9 Original, Dalmatian, Doberman, Chow Chow, Robot Dog, Police K9 | Hunting, K9, multiple coats |
-| Addon Exotic | Armadillo, Giant Cockroach, Tarantula | Novelty pets |
 
 ### XP & Progression System
 Pets level up from 0 to 50 through **7 active XP sources** and passive XP ticks. Progression unlocks new abilities as your pet grows.
@@ -54,12 +52,12 @@ Pets level up from 0 to 50 through **7 active XP sources** and passive XP ticks.
 Real-time XP display in the View Stats panel — no need to despawn/respawn to check progress. Milestone celebrations at levels 10, 25, and 50 with notifications and pet vocalizations.
 
 ### Full Interaction System
-- **Command menu** (default: `O` key) — follow, wait, sit, tricks, hunt, go there, get in car, toggle leash
+- **Command menu** (default: `O` key) — follow, wait, sit, tricks, hunt, go there, get in car
 - **ox_target interactions** — pet, view stats, heal, revive, give water
 - **Petting animations** — player and pet play synced animations, awards XP, relieves stress (configurable HUD integration)
 - **Tricks** — sit, beg, shake paw, play dead (level-gated, per-trick unlock)
-- **Auto vehicle enter/exit** — pet hops in when you get in a car, hops out when you leave
-- **Leash system** — rope-based visual leash for dogs, enforces distance, syncs across clients, auto-detaches on vehicle entry/death/despawn
+- **Auto vehicle enter/exit** — all pets hop in when you get in a car, hop out when you leave (seats permitting)
+- **Auto-follow** — pets default to following their owner and automatically resume following after completing any task or trick
 - **Guard mode** — pet holds position and attacks intruding NPCs (optionally players), owner gets notified
 - **Pet name overhead** — 3D floating name and level title above each active pet
 - **Pet emotes** — `/petemote` command with moods, vocalizations, and animations
@@ -79,8 +77,8 @@ Set your pet to guard a location. The pet holds position and attacks any NPC (op
 
 - Level 10+ required, dogs and wild species only
 - Combat attributes fully configurable (ability, range, movement)
-- Can't guard while leashed; can't hunt while guarding
-- Auto-stops on vehicle entry, pet death, despawn, or logout
+- Can't hunt while guarding
+- Auto-stops on pet death, despawn, or logout
 
 ### Specialization System
 At level 20, pets unlock a permanent one-time specialization choice:
@@ -135,17 +133,6 @@ Players buy a Dog House from the supply shop, place it as a prop in the world, a
 | ox_inventory | [overextended/ox_inventory](https://github.com/overextended/ox_inventory) |
 | ox_target | [overextended/ox_target](https://github.com/overextended/ox_target) |
 | oxmysql | [overextended/oxmysql](https://github.com/overextended/oxmysql) |
-
-### Optional Addon Models
-
-These free streaming resources add 11 extra pet models. Download them separately and `ensure` them before `murderface-pets`. The script detects available models automatically — addon pets that aren't installed simply won't spawn.
-
-| Resource | Models | Author | License |
-|----------|--------|--------|---------|
-| [popcornrp-pets](https://github.com/alberttheprince/popcornrp-pets) | K9 M/F, K9 Original, Dalmatian, Doberman, Chow Chow, Robot Dog, Armadillo, Cockroach, Tarantula | alberttheprince | Use permitted, no resale |
-| [AddonPDK9](https://github.com/12LetterMeme/AddonPDK9) | Police K9 (German Shepherd) | 12LetterMeme | GPL-3.0 |
-
-The K9 models from popcornrp-pets include built-in component accessories (vests, collars, glasses, nameplates) that can be accessed via `SetPedComponentVariation`. Full accessory menus are planned for a future update.
 
 ## Installation
 
@@ -367,14 +354,6 @@ Open `ox_inventory/data/items.lua` and paste the following block inside the `ret
 		server = { export = 'murderface-pets.murderface_groomingkit' },
 	},
 
-	['murderface_leash'] = {
-		label = 'Pet Leash',
-		weight = 100,
-		consume = 0,
-		description = 'Attach a leash to your pet',
-		server = { export = 'murderface-pets.murderface_leash' },
-	},
-
 	['murderface_doghouse'] = {
 		label = 'Dog House',
 		weight = 5000,
@@ -384,121 +363,9 @@ Open `ox_inventory/data/items.lua` and paste the following block inside the `ret
 	},
 ```
 
-<details>
-<summary><strong>Addon pet items (click to expand)</strong> — only add these if you install the corresponding streaming resources</summary>
-
-```lua
-	-- ========================================
-	--  murderface-pets: Addon Pet Items
-	--  Requires: popcornrp-pets and/or AddonPDK9 streaming resources
-	-- ========================================
-
-	['murderface_k9m'] = {
-		label = 'K9 Shepherd (M)',
-		weight = 100,
-		stack = false,
-		consume = 0,
-		description = 'A male K9 German Shepherd companion',
-		server = { export = 'murderface-pets.murderface_k9m' },
-	},
-
-	['murderface_k9f'] = {
-		label = 'K9 Shepherd (F)',
-		weight = 100,
-		stack = false,
-		consume = 0,
-		description = 'A female K9 German Shepherd companion',
-		server = { export = 'murderface-pets.murderface_k9f' },
-	},
-
-	['murderface_k9'] = {
-		label = 'K9 Original',
-		weight = 100,
-		stack = false,
-		consume = 0,
-		description = 'An original K9 companion',
-		server = { export = 'murderface-pets.murderface_k9' },
-	},
-
-	['murderface_dalmatian'] = {
-		label = 'Dalmatian',
-		weight = 100,
-		stack = false,
-		consume = 0,
-		description = 'A spotted Dalmatian companion',
-		server = { export = 'murderface-pets.murderface_dalmatian' },
-	},
-
-	['murderface_doberman'] = {
-		label = 'Doberman',
-		weight = 100,
-		stack = false,
-		consume = 0,
-		description = 'A sleek Doberman companion',
-		server = { export = 'murderface-pets.murderface_doberman' },
-	},
-
-	['murderface_chowchow'] = {
-		label = 'Chow Chow',
-		weight = 100,
-		stack = false,
-		consume = 0,
-		description = 'A fluffy Chow Chow companion',
-		server = { export = 'murderface-pets.murderface_chowchow' },
-	},
-
-	['murderface_robotdog'] = {
-		label = 'Robot Dog',
-		weight = 100,
-		stack = false,
-		consume = 0,
-		description = 'A mechanical canine companion',
-		server = { export = 'murderface-pets.murderface_robotdog' },
-	},
-
-	['murderface_armadillo'] = {
-		label = 'Armadillo',
-		weight = 100,
-		stack = false,
-		consume = 0,
-		description = 'A tough little Armadillo companion',
-		server = { export = 'murderface-pets.murderface_armadillo' },
-	},
-
-	['murderface_cockroach'] = {
-		label = 'Giant Cockroach',
-		weight = 100,
-		stack = false,
-		consume = 0,
-		description = 'A surprisingly resilient companion',
-		server = { export = 'murderface-pets.murderface_cockroach' },
-	},
-
-	['murderface_tarantula'] = {
-		label = 'Tarantula',
-		weight = 100,
-		stack = false,
-		consume = 0,
-		description = 'A hairy eight-legged companion',
-		server = { export = 'murderface-pets.murderface_tarantula' },
-	},
-
-	-- AddonPDK9 (https://github.com/12LetterMeme/AddonPDK9)
-	['murderface_pdk9'] = {
-		label = 'Police K9',
-		weight = 100,
-		stack = false,
-		consume = 0,
-		description = 'A trained Police K9 German Shepherd',
-		server = { export = 'murderface-pets.murderface_pdk9' },
-	},
-```
-
-</details>
-
 ### 3. Inventory images
 
-Copy all `.png` files from the `inventory_images/` folder into your ox_inventory web images directory (typically `ox_inventory/web/images/`). All 24 images (16 pets + 8 supplies/accessories) are included. Addon pet images are not included — you'll need to create or source your own if using addon models.
+Copy all `.png` files from the `inventory_images/` folder into your ox_inventory web images directory (typically `ox_inventory/web/images/`). All 23 images (16 pets + 7 supplies) are included.
 
 ### 4. Start the resource
 
@@ -533,7 +400,6 @@ All settings are in `config.lua` with inline comments. Everything is tunable wit
 | `Config.petShop` | Shop NPC model, coords, blip settings |
 | `Config.suppliesShop` | Supply shop NPC model, coords, blip settings |
 | `Config.stressRelief` | Stress reduction from petting (for HUD scripts) |
-| `Config.leash` | Leash length, rope type, allowed species |
 | `Config.guard` | Guard radius, check interval, player targeting, species |
 | `Config.specializations` | Guardian/Tracker/Companion multipliers and thresholds |
 | `Config.strays` | Stray spawn points, trust threshold, feed cooldown, rare coats |
@@ -562,7 +428,6 @@ murderface-pets/
 ├── client/
 │   ├── functions.lua       -- Spawn helpers, attack/hunt/K9/tracker logic
 │   ├── client.lua          -- ActivePed tracking, core interactions
-│   ├── leash.lua           -- Rope-based leash system + network sync
 │   ├── guard.lua           -- Guard mode enforcement + combat
 │   ├── strays.lua          -- Stray taming proximity spawning
 │   ├── doghouse.lua        -- Placeable dog house + breeding menu

@@ -244,6 +244,7 @@ RegisterNetEvent('murderface-pets:client:spawnPet', function(modelName, hostileT
                 local statsMeta = {
                     { label = 'Level', value = string.format('%d (%s)', level, title) },
                     { label = 'XP', value = string.format('%d / %d', currentXP, nextLevelXP) },
+                    { label = 'Sex', value = md.gender and 'Male' or 'Female' },
                     { label = 'Health', value = ('%d / %d'):format(math.max(0, currentHP), maxHP) },
                     { label = 'Food', value = ('%.0f%%'):format(md.food or 0) },
                     { label = 'Thirst', value = ('%.0f%%'):format(md.thirst or 0) },
@@ -446,7 +447,6 @@ function createActivePetThread(ped, item)
             -- Pet has died — keep dead until revived/despawned
             if IsPedDeadOrDying(savedData.entity, true) then
                 StopGuard(savedData.item.metadata.hash)
-                DetachLeash(savedData.item.metadata.hash)
                 local c_health = GetEntityHealth(savedData.entity)
                 if c_health <= 100 then
                     TriggerServerEvent('murderface-pets:server:updatePetStats',
@@ -493,7 +493,6 @@ end)
 
 RegisterNetEvent('murderface-pets:client:despawnPet', function(hash, instant)
     StopGuard(hash)
-    DetachLeash(hash)
     if instant then
         ActivePed:remove(hash)
         TriggerServerEvent('murderface-pets:server:setAsDespawned', hash)
@@ -522,7 +521,6 @@ end)
 
 RegisterNetEvent('qbx_core:client:onLogout', function()
     StopAllGuards()
-    DetachAllLeashes()
     ActivePed:removeAll()
 end)
 
@@ -795,33 +793,28 @@ CreateThread(function()
     while true do
         local plyPed = PlayerPedId()
         local inVehicle = IsPedInAnyVehicle(plyPed, false)
-        local activePet = ActivePed:read()
 
-        if activePet then
-            local petPed = activePet.entity
-            if inVehicle and not wasInVehicle then
-                -- Auto-stop guard and detach leash when entering a vehicle
-                local hash = activePet.item.metadata.hash
-                if IsGuarding(hash) then
-                    StopGuard(hash)
-                    lib.notify({ description = 'Guard mode ended (vehicle)', type = 'info', duration = 3000 })
+        if inVehicle and not wasInVehicle then
+            -- Owner just got in a vehicle — board all pets that fit
+            local vehicle = GetVehiclePedIsUsing(plyPed)
+            if vehicle and vehicle ~= 0 then
+                for _, petData in pairs(ActivePed.pets) do
+                    local hash = petData.item and petData.item.metadata and petData.item.metadata.hash
+                    if DoesEntityExist(petData.entity) and not IsPedInAnyVehicle(petData.entity, false)
+                        and not (hash and IsGuarding(hash)) then
+                        putPetInVehicle(vehicle, petData.entity)
+                    end
                 end
-                if IsLeashed(hash) then
-                    DetachLeash(hash)
-                    lib.notify({ description = 'Leash auto-removed (vehicle)', type = 'info', duration = 3000 })
-                end
-
-                local vehicle = GetVehiclePedIsUsing(plyPed)
-                if vehicle and vehicle ~= 0 and not IsPedInAnyVehicle(petPed, false) then
-                    putPetInVehicle(vehicle, petPed)
-                end
-            elseif not inVehicle and wasInVehicle then
-                if IsPedInAnyVehicle(petPed, false) then
+            end
+        elseif not inVehicle and wasInVehicle then
+            -- Owner just exited — pull all pets out and resume follow
+            for _, petData in pairs(ActivePed.pets) do
+                if DoesEntityExist(petData.entity) and IsPedInAnyVehicle(petData.entity, false) then
                     local coord = getSpawnLocation(plyPed)
-                    SetEntityCoords(petPed, coord.x, coord.y, coord.z, false, false, false, false)
+                    SetEntityCoords(petData.entity, coord.x, coord.y, coord.z, false, false, false, false)
                     Wait(100)
-                    ClearPedTasks(petPed)
-                    TaskFollowTargetedPlayer(petPed, plyPed, 3.0, true)
+                    ClearPedTasks(petData.entity)
+                    TaskFollowTargetedPlayer(petData.entity, plyPed, 3.0, true)
                 end
             end
         end

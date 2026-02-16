@@ -8,7 +8,6 @@ local alreadyHunting = { state = false }
 -- =======================================
 
 local supplyIcons = {
-    murderface_leash       = { icon = 'link',         iconColor = '#228be6', desc = 'Keep your pet on a leash' },
     murderface_food        = { icon = 'bowl-food',    iconColor = '#e8590c', desc = 'Restores 50 hunger' },
     murderface_firstaid    = { icon = 'kit-medical',  iconColor = '#e03131', desc = 'Heals 25% max HP or revives' },
     murderface_waterbottle = { icon = 'bottle-water', iconColor = '#228be6', desc = 'Refillable — holds 10 uses' },
@@ -45,7 +44,7 @@ local menu = {
         show = function(activePed)
             if not activePed.canHunt then return false end
             local hash = activePed.item.metadata.hash
-            if IsLeashed(hash) or IsGuarding(hash) then return false end
+            if IsGuarding(hash) then return false end
             return (activePed.item.metadata.level or 0) >= Config.progression.minHuntLevel
         end,
         action = function(_, activePed)
@@ -81,7 +80,7 @@ local menu = {
         show = function(activePed)
             if not activePed.canHunt then return false end
             local hash = activePed.item.metadata.hash
-            if IsLeashed(hash) or IsGuarding(hash) then return false end
+            if IsGuarding(hash) then return false end
             return (activePed.item.metadata.level or 0) >= Config.progression.minHuntLevel
         end,
         action = function(plyped, activePed)
@@ -112,7 +111,7 @@ local menu = {
         description = 'Point where your pet should go',
         show = function(activePed)
             local hash = activePed.item.metadata.hash
-            return not IsLeashed(hash) and not IsGuarding(hash)
+            return not IsGuarding(hash)
         end,
         action = function(_, activePed)
             doSomethingIfPedIsInsideVehicle(activePed.entity)
@@ -139,7 +138,6 @@ local menu = {
         triggerNotification = { 'PETNAME is now guarding!', 'PETNAME cannot guard here!' },
         show = function(activePed)
             if not Config.guard or not Config.guard.enabled then return false end
-            if IsLeashed(activePed.item.metadata.hash) then return false end
             if IsGuarding(activePed.item.metadata.hash) then return false end
             local species = activePed.petConfig and activePed.petConfig.species
             if not species then return false end
@@ -151,10 +149,6 @@ local menu = {
             return false
         end,
         action = function(_, activePed)
-            if IsLeashed(activePed.item.metadata.hash) then
-                lib.notify({ description = Lang:t('menu.action_menu.error.cannot_guard_leashed'), type = 'error', duration = 5000 })
-                return false
-            end
             StartGuard(activePed)
             return true
         end,
@@ -179,7 +173,7 @@ local menu = {
         TYPE = 'GetinCar',
         icon = 'car-side',
         iconColor = '#12b886',
-        description = 'Hop into the nearest vehicle',
+        description = 'Board or exit the vehicle',
         action = function()
             getIntoCar()
         end
@@ -258,6 +252,12 @@ local menu = {
         action = function(_, activePed)
             doSomethingIfPedIsInsideVehicle(activePed.entity)
             Anims.play(activePed.entity, activePed.animClass, 'sit')
+            CreateThread(function()
+                Wait(4000)
+                if DoesEntityExist(activePed.entity) and not IsEntityDead(activePed.entity) then
+                    TaskFollowTargetedPlayer(activePed.entity, PlayerPedId(), 3.0, true)
+                end
+            end)
         end,
     },
     {
@@ -272,6 +272,12 @@ local menu = {
         action = function(_, activePed)
             doSomethingIfPedIsInsideVehicle(activePed.entity)
             Anims.play(activePed.entity, activePed.animClass, 'sleep')
+            CreateThread(function()
+                Wait(5000)
+                if DoesEntityExist(activePed.entity) and not IsEntityDead(activePed.entity) then
+                    TaskFollowTargetedPlayer(activePed.entity, PlayerPedId(), 3.0, true)
+                end
+            end)
         end,
     },
     {
@@ -288,39 +294,12 @@ local menu = {
             SetAnimalMood(activePed.entity, 1)
             PlayAnimalVocalization(activePed.entity, 3, 'bark')
             Anims.play(activePed.entity, activePed.animClass, 'bark')
-        end,
-    },
-    {
-        label = 'Toggle Leash',
-        TYPE = 'ToggleLeash',
-        icon = 'link',
-        iconColor = '#228be6',
-        description = 'Attach or remove a leash',
-        show = function(activePed)
-            if not Config.leash or not Config.leash.enabled then return false end
-            local species = activePed.petConfig and activePed.petConfig.species
-            if not species then return false end
-            for _, s in ipairs(Config.leash.speciesAllowed) do
-                if species == s then
-                    -- Already leashed = always show (to allow removal)
-                    if IsLeashed(activePed.item.metadata.hash) then return true end
-                    -- Otherwise require leash item in inventory
-                    local count = exports.ox_inventory:Search('count', Config.items.leash.name)
-                    return count and count > 0
+            CreateThread(function()
+                Wait(3000)
+                if DoesEntityExist(activePed.entity) and not IsEntityDead(activePed.entity) then
+                    TaskFollowTargetedPlayer(activePed.entity, PlayerPedId(), 3.0, true)
                 end
-            end
-            return false
-        end,
-        action = function(_, activePed)
-            if not IsLeashed(activePed.item.metadata.hash) then
-                local count = exports.ox_inventory:Search('count', Config.items.leash.name)
-                if not count or count < 1 then
-                    lib.notify({ description = 'You need a leash!', type = 'error', duration = 5000 })
-                    return false
-                end
-            end
-            ToggleLeash(activePed)
-            return true
+            end)
         end,
     },
     {

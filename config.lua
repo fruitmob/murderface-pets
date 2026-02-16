@@ -40,16 +40,6 @@ Config.petEmotes = {
     sleep = { anim = 'sleep' },
 }
 
-Config.leash = {
-    enabled = true,
-    length = 3.0,              -- rope length in meters
-    ropeType = 5,              -- 5 = RopeReins (thin leash look)
-    playerBone = 18905,        -- SKEL_L_Hand
-    petBone = 39317,           -- SKEL_Neck_1
-    enforceDistance = true,     -- script-side distance cap (rope is visual only)
-    speciesAllowed = { 'dog' },
-}
-
 Config.guard = {
     enabled = true,
     radius = 10.0,              -- default guard radius in meters
@@ -549,185 +539,6 @@ Config.pets = {
         icon     = 'paw',
     },
 
-    -- ===== Addon Pets (Optional — require streaming resources) =====
-    -- popcornrp-pets: https://github.com/alberttheprince/popcornrp-pets
-    {
-        model    = 'k9_male',
-        item     = 'murderface_k9m',
-        label    = 'K9 Shepherd (M)',
-        maxHealth = 300,
-        price    = 10000,
-        canHunt  = true,
-        isK9     = true,
-        animClass = 'large_dog',
-        size     = 'large',
-        species  = 'dog',
-        canPet   = true,
-        canTrick = true,
-        icon     = 'dog',
-        addon    = true,
-    },
-    {
-        model    = 'k9_female',
-        item     = 'murderface_k9f',
-        label    = 'K9 Shepherd (F)',
-        maxHealth = 300,
-        price    = 10000,
-        canHunt  = true,
-        isK9     = true,
-        animClass = 'large_dog',
-        size     = 'large',
-        species  = 'dog',
-        canPet   = true,
-        canTrick = true,
-        icon     = 'dog',
-        addon    = true,
-    },
-    {
-        model    = 'a_c_k9',
-        item     = 'murderface_k9',
-        label    = 'K9 Original',
-        maxHealth = 300,
-        price    = 8000,
-        canHunt  = true,
-        isK9     = true,
-        animClass = 'large_dog',
-        size     = 'large',
-        species  = 'dog',
-        canPet   = true,
-        canTrick = true,
-        icon     = 'dog',
-        addon    = true,
-    },
-    {
-        model    = 'a_c_dalmatian',
-        item     = 'murderface_dalmatian',
-        label    = 'Dalmatian',
-        maxHealth = 250,
-        price    = 7500,
-        canHunt  = true,
-        isK9     = false,
-        animClass = 'large_dog',
-        size     = 'large',
-        species  = 'dog',
-        canPet   = true,
-        canTrick = true,
-        icon     = 'dog',
-        addon    = true,
-    },
-    {
-        model    = 'doberman',
-        item     = 'murderface_doberman',
-        label    = 'Doberman',
-        maxHealth = 300,
-        price    = 9000,
-        canHunt  = true,
-        isK9     = false,
-        animClass = 'large_dog',
-        size     = 'large',
-        species  = 'dog',
-        canPet   = true,
-        canTrick = true,
-        icon     = 'dog',
-        addon    = true,
-    },
-    {
-        model    = 'chowchow',
-        item     = 'murderface_chowchow',
-        label    = 'Chow Chow',
-        maxHealth = 250,
-        price    = 6000,
-        canHunt  = false,
-        isK9     = false,
-        animClass = 'large_dog',
-        size     = 'large',
-        species  = 'dog',
-        canPet   = true,
-        canTrick = true,
-        icon     = 'dog',
-        addon    = true,
-    },
-    {
-        model    = 'robot_dog',
-        item     = 'murderface_robotdog',
-        label    = 'Robot Dog',
-        maxHealth = 350,
-        price    = 20000,
-        canHunt  = true,
-        isK9     = false,
-        animClass = 'large_dog',
-        size     = 'large',
-        species  = 'dog',
-        canPet   = true,
-        canTrick = true,
-        icon     = 'dog',
-        addon    = true,
-    },
-    {
-        model    = 'armadillo',
-        item     = 'murderface_armadillo',
-        label    = 'Armadillo',
-        maxHealth = 150,
-        price    = 5000,
-        canHunt  = false,
-        isK9     = false,
-        animClass = 'cat',
-        size     = 'small',
-        species  = 'wild',
-        canPet   = false,
-        canTrick = false,
-        icon     = 'paw',
-        addon    = true,
-    },
-    {
-        model    = 'cockroach',
-        item     = 'murderface_cockroach',
-        label    = 'Giant Cockroach',
-        maxHealth = 100,
-        price    = 1000,
-        canHunt  = false,
-        isK9     = false,
-        animClass = nil,
-        size     = 'small',
-        species  = 'wild',
-        canPet   = false,
-        canTrick = false,
-        icon     = 'bug',
-        addon    = true,
-    },
-    {
-        model    = 'tarantula',
-        item     = 'murderface_tarantula',
-        label    = 'Tarantula',
-        maxHealth = 100,
-        price    = 1500,
-        canHunt  = false,
-        isK9     = false,
-        animClass = nil,
-        size     = 'small',
-        species  = 'wild',
-        canPet   = false,
-        canTrick = false,
-        icon     = 'spider',
-        addon    = true,
-    },
-    -- AddonPDK9: https://github.com/12LetterMeme/AddonPDK9
-    {
-        model    = 'pdk9',
-        item     = 'murderface_pdk9',
-        label    = 'Police K9',
-        maxHealth = 300,
-        price    = 10000,
-        canHunt  = true,
-        isK9     = true,
-        animClass = 'large_dog',
-        size     = 'large',
-        species  = 'dog',
-        canPet   = true,
-        canTrick = true,
-        icon     = 'dog',
-        addon    = true,
-    },
 }
 
 -- ========================================
@@ -772,15 +583,13 @@ Config.items = {
     waterbottle = {
         name = 'murderface_waterbottle',
         duration = 2,
-        maxCapacity = 10,         -- max water units in one bottle
-        refillCost = 2,           -- water units consumed per drink
+        maxCapacity = 6,          -- max water units in one bottle
+        refillCost = 2,           -- water/water_bottle items consumed per fill
+        refillAmount = 6,         -- water units added per fill (fills to full)
     },
     doghouse = {
         name = 'murderface_doghouse',
         duration = 3,             -- seconds for placement progress bar
-    },
-    leash = {
-        name = 'murderface_leash',
     },
 }
 
@@ -876,8 +685,7 @@ Config.suppliesShop = {
         { name = 'murderface_waterbottle', label = 'Portable Water Bottle', price = 300 },
         { name = 'murderface_collar',      label = 'Pet Collar',            price = 250 },
         { name = 'murderface_nametag',     label = 'Name Tag',              price = 150 },
-        { name = 'murderface_leash',       label = 'Pet Leash',              price = 200 },
-        { name = 'murderface_groomingkit', label = 'Grooming Kit',          price = 750 },
+{ name = 'murderface_groomingkit', label = 'Grooming Kit',          price = 750 },
         { name = 'murderface_doghouse',   label = 'Dog House',             price = 5000 },
     },
 }

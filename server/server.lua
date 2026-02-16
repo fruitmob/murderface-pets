@@ -236,6 +236,11 @@ end
 ---@param instant? boolean Skip despawn animation
 function Pet:despawnPet(src, hash, instant)
     TriggerClientEvent('murderface-pets:client:despawnPet', src, hash, instant)
+    -- Clear server tracking immediately for instant despawns so the next item use
+    -- doesn't see isSpawned=true (client's setAsDespawned round-trip is too slow).
+    if instant then
+        self:setAsDespawned(src, hash)
+    end
 end
 
 --- Find active pet data by hash
@@ -505,10 +510,8 @@ exports(Config.items.waterbottle.name, function(event, item, inventory, slot)
             return false
         end
 
-        exports.ox_inventory:RemoveItem(src, waterItem, refillCost)
-        local invItem = inventory.items[slot]
-        local metadata = invItem and invItem.metadata or {}
-        TriggerClientEvent('murderface-pets:client:fillBottle', src, { name = item.name, slot = slot, metadata = metadata })
+        -- Don't remove water here — wait until after progress bar completes
+        TriggerClientEvent('murderface-pets:client:fillBottle', src, { name = item.name, slot = slot, waterItem = waterItem })
         return false
     end
 end)
@@ -652,9 +655,26 @@ end)
 RegisterNetEvent('murderface-pets:server:fillBottle', function(item)
     local src = source
     local maxCap = Config.items.waterbottle.maxCapacity
+    local refillAmount = Config.items.waterbottle.refillAmount or Config.items.waterbottle.maxCapacity
     local refillCost = Config.items.waterbottle.refillCost
 
-    -- Get fresh item data from inventory
+    -- Re-validate water item availability (in case inventory changed during progress bar)
+    local waterItem = item.waterItem
+    if not waterItem then
+        TriggerClientEvent('ox_lib:notify', src, { description = 'Missing water source', type = 'error' })
+        return
+    end
+
+    local waterCount = exports.ox_inventory:GetItemCount(src, waterItem)
+    if not waterCount or waterCount < refillCost then
+        TriggerClientEvent('ox_lib:notify', src, {
+            description = 'Not enough water to fill the bottle',
+            type = 'error'
+        })
+        return
+    end
+
+    -- Get fresh waterbottle data from inventory
     local freshItem
     local invItems = exports.ox_inventory:GetInventoryItems(src)
     if invItems then
@@ -675,13 +695,11 @@ RegisterNetEvent('murderface-pets:server:fillBottle', function(item)
     end
 
     local meta = freshItem.metadata
-    if type(meta) ~= 'table' or meta.liter == nil then
-        exports.ox_inventory:SetMetadata(src, freshItem.slot, { liter = 0 })
-        TriggerClientEvent('ox_lib:notify', src, {
-            description = 'Washing water bottle!',
-            type = 'inform'
-        })
-        return
+    if type(meta) ~= 'table' then
+        meta = {}
+    end
+    if meta.liter == nil then
+        meta.liter = 0
     end
 
     if meta.liter >= maxCap then
@@ -692,10 +710,12 @@ RegisterNetEvent('murderface-pets:server:fillBottle', function(item)
         return
     end
 
-    meta.liter = math.min(maxCap, meta.liter + refillCost)
+    -- Remove water items and fill bottle
+    exports.ox_inventory:RemoveItem(src, waterItem, refillCost)
+    meta.liter = math.min(maxCap, meta.liter + refillAmount)
     exports.ox_inventory:SetMetadata(src, freshItem.slot, meta)
     TriggerClientEvent('ox_lib:notify', src, {
-        description = 'Filled bottle',
+        description = ('Filled bottle (%d/%d)'):format(meta.liter, maxCap),
         type = 'success'
     })
 end)
@@ -713,14 +733,6 @@ RegisterNetEvent('murderface-pets:server:onLogout', function(hashes)
             Pet:setAsDespawned(src, hash)
         end
     end
-end)
-
--- ============================
---      Leash Sync
--- ============================
-
-RegisterNetEvent('murderface-pets:server:syncLeash', function(petNetId, leashed)
-    TriggerClientEvent('murderface-pets:client:syncLeash', -1, source, petNetId, leashed)
 end)
 
 -- ============================

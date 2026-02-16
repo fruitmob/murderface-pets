@@ -117,7 +117,6 @@ local Translations = {
                 need_to_be_inside_car = 'You need to be inside a car',
                 to_far = 'Too far',
                 no_empty_seat = 'No empty seat found!',
-                cannot_guard_leashed = 'Cannot guard while leashed',
             },
             success = {},
             info = {},

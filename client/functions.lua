@@ -213,19 +213,32 @@ function getIntoCar()
     local activePet = ActivePed:read()
     if not activePet then return end
 
+    local petPed = activePet.entity
+
+    -- If pet is already in a vehicle, eject it
+    if IsPedInAnyVehicle(petPed, false) then
+        local coord = getSpawnLocation(plyped)
+        SetEntityCoords(petPed, coord.x, coord.y, coord.z, false, false, false, false)
+        Wait(100)
+        ClearPedTasks(petPed)
+        TaskFollowTargetedPlayer(petPed, plyped, 3.0, true)
+        return
+    end
+
+    -- Otherwise, board pet into owner's vehicle
     if not IsPedSittingInAnyVehicle(plyped) then
         lib.notify({ description = Lang:t('menu.action_menu.error.need_to_be_inside_car'), type = 'error', duration = 7000 })
         return
     end
 
-    local dist = #(GetEntityCoords(plyped) - GetEntityCoords(activePet.entity))
+    local dist = #(GetEntityCoords(plyped) - GetEntityCoords(petPed))
     if dist > 8 then
         lib.notify({ description = Lang:t('menu.action_menu.error.to_far'), type = 'error', duration = 7000 })
         return
     end
 
     local vehicle = GetVehiclePedIsUsing(plyped)
-    if not putPetInVehicle(vehicle, activePet.entity) then
+    if not putPetInVehicle(vehicle, petPed) then
         lib.notify({ description = Lang:t('menu.action_menu.error.no_empty_seat'), type = 'error', duration = 7000 })
     end
 end
@@ -277,6 +290,19 @@ function goThere(ped)
         Draw2DText('Press ~g~E~w~ To go there', 4, { 255, 255, 255 }, 0.4, 0.43, 0.913)
         if IsControlJustReleased(0, 38) then
             TaskGoToCoordAnyMeans(ped, coords, 10.0, 0, 0, 0, 0)
+            -- Monitor arrival then resume following
+            CreateThread(function()
+                local target = coords
+                while DoesEntityExist(ped) and not IsEntityDead(ped) do
+                    local petPos = GetEntityCoords(ped)
+                    if #(petPos - target) < 3.0 then break end
+                    Wait(1000)
+                end
+                Wait(2000)
+                if DoesEntityExist(ped) and not IsEntityDead(ped) then
+                    TaskFollowTargetedPlayer(ped, PlayerPedId(), 3.0, true)
+                end
+            end)
             return
         end
         DrawLine(position.x, position.y, position.z, coords.x, coords.y, coords.z, color.r, color.g, color.b, color.a)
@@ -286,31 +312,49 @@ function goThere(ped)
 end
 
 -- ============================
---    Relationships
--- ============================
-
-function SetRelationshipBetweenPed(ped)
-    if not ped then return end
-    RemovePedFromGroup(ped)
-    SetPedRelationshipGroupHash(ped, GetHashKey(tostring(ped)))
-    SetCanAttackFriendly(ped, false, false)
-end
-
--- ============================
 --    Attack Logic
 -- ============================
 
+-- Reusable hunter relationship group — created once, reused each hunt
+local hunterGroupHash
+do
+    local _, h = AddRelationshipGroup('MFPETS_HUNTER')
+    hunterGroupHash = h
+end
+
 function AttackTargetedPed(attackerPed, targetPed)
     if not attackerPed or not targetPed then return false end
-    SetPedCombatAttributes(attackerPed, 46, 1)
-    TaskGoToEntityWhileAimingAtEntity(attackerPed, targetPed, targetPed, 8.0, 1, 0, 15, 1, 1, 1566631136)
+
+    -- Let the combat AI react to target movement/fleeing
+    SetBlockingOfNonTemporaryEvents(attackerPed, false)
+
+    -- Move pet into hunter group hostile toward the target's group
+    local targetGroup = GetPedRelationshipGroupHash(targetPed)
+    SetPedRelationshipGroupHash(attackerPed, hunterGroupHash)
+    SetRelationshipBetweenGroups(5, hunterGroupHash, targetGroup)   -- 5 = Hate
+    SetCanAttackFriendly(attackerPed, true, false)
+
+    -- Full combat configuration BEFORE issuing tasks
+    SetPedCombatAttributes(attackerPed, 46, 1)  -- fight armed peds while unarmed
+    SetPedCombatAbility(attackerPed, 100)        -- max skill
+    SetPedCombatRange(attackerPed, 2)            -- far engagement distance
+    SetPedCombatMovement(attackerPed, 3)         -- suicidal aggression
+    SetPedFleeAttributes(attackerPed, 0, 0)      -- never flee
+
+    -- Single combat task (animals can't aim, so TaskGoToEntityWhileAimingAtEntity was wasted)
     TaskCombatPed(attackerPed, targetPed, 0, 16)
-    SetRelationshipBetweenPed(attackerPed)
-    SetPedCombatMovement(attackerPed, 3)
+
+    -- Re-engage loop: if pet somehow drops combat, re-issue the task
     while not IsPedDeadOrDying(targetPed, 0) do
+        if not IsPedInCombat(attackerPed) then
+            TaskCombatPed(attackerPed, targetPed, 0, 16)
+        end
         Wait(1000)
     end
-    -- Restore companion group so civs stop being hostile after hunt
+
+    -- Restore passive companion state
+    SetBlockingOfNonTemporaryEvents(attackerPed, true)
+    SetCanAttackFriendly(attackerPed, false, false)
     SetPedRelationshipGroupHash(attackerPed, petGroupHash)
     TaskFollowTargetedPlayer(attackerPed, PlayerPedId(), 3.0, false)
 end
@@ -416,6 +460,7 @@ function HuntandGrab(plyped, activePed)
                 if (entity and dist < 3.0) or dist > 50.0 then
                     DetachEntity(entity, true, false)
                     ClearPedSecondaryTask(pet)
+                    TaskFollowTargetedPlayer(pet, PlayerPedId(), 3.0, true)
                     return
                 end
                 Wait(1000)
@@ -567,6 +612,12 @@ function SearchLogic(_, activePed)
             activePed.item.metadata.hash, { key = 'activity', action = 'k9Search' })
     end
     finished = true
+
+    -- Resume following owner after search completes
+    if DoesEntityExist(activePed.entity) and not IsEntityDead(activePed.entity) then
+        Wait(2000)
+        TaskFollowTargetedPlayer(activePed.entity, PlayerPedId(), 3.0, true)
+    end
 end
 
 -- ============================
@@ -616,5 +667,11 @@ function k9SearchVehicle(veh, activePed)
             Anims.play(activePed.entity, activePed.animClass, 'sit')
         end
         Wait(3000)
+    end
+
+    -- Resume following owner after search completes
+    if DoesEntityExist(activePed.entity) and not IsEntityDead(activePed.entity) then
+        Wait(1000)
+        TaskFollowTargetedPlayer(activePed.entity, PlayerPedId(), 3.0, true)
     end
 end

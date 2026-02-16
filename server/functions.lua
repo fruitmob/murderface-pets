@@ -1,6 +1,8 @@
 -- murderface-pets: Server-side helper functions
 -- XP system, cooldowns, pet initialization, stat update logic.
 
+math.randomseed(os.time())
+
 Update = {}
 
 -- ============================

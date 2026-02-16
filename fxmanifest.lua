@@ -3,7 +3,7 @@ games { 'gta5' }
 name 'murderface-pets'
 author 'FMRP Development Team'
 description 'Pet companion system for FMRP'
-version '1.1.0'
+version '1.2.0'
 
 shared_scripts {
     '@ox_lib/init.lua',
@@ -18,8 +18,7 @@ client_scripts {
     '@qbx_core/modules/playerdata.lua',
     'client/functions.lua',
     'client/client.lua',
-    'client/leash.lua',
-    'client/guard.lua',
+'client/guard.lua',
     'client/strays.lua',
     'client/doghouse.lua',
     'client/menu.lua',

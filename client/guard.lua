@@ -1,6 +1,5 @@
 -- murderface-pets: Guard mode system
 -- Pet guards a fixed position and attacks intruders entering the radius.
--- Follows the enforcement-thread pattern from leash.lua.
 
 local guardState = {}       -- { [petHash] = { pos = vector3, active = bool } }
 local notifiedPeds = {}     -- { [petHash] = { [pedHandle] = true } } — prevent notification spam
