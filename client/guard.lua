@@ -223,6 +223,27 @@ end
 local aggroState = {}
 local aggroThreadRunning = false
 
+-- Event-driven damage tracking (replaces unreliable HasEntityBeenDamagedByEntity)
+local recentThreats = {} -- { [pedHandle] = timestamp }
+local THREAT_WINDOW = 10000 -- 10s window
+
+AddEventHandler('gameEventTriggered', function(name, args)
+    if name ~= 'CEventNetworkEntityDamage' then return end
+    local victim = args[1]
+    local attacker = args[2]
+    if not victim or not attacker or attacker == 0 or victim == 0 then return end
+    local playerPed = PlayerPedId()
+
+    -- Defensive: someone attacked the player
+    if victim == playerPed and IsEntityAPed(attacker) then
+        recentThreats[attacker] = GetGameTimer()
+    end
+    -- Offensive: player attacked someone (pet should assist)
+    if attacker == playerPed and IsEntityAPed(victim) then
+        recentThreats[victim] = GetGameTimer()
+    end
+end)
+
 function IsAggroEnabled(hash)
     return aggroState[hash] ~= nil and aggroState[hash].active == true
 end
@@ -299,10 +320,10 @@ local function startAggroThread()
 
                                 local dist = #(playerPos - GetEntityCoords(ped))
                                 if dist <= cfg.detectionRange then
-                                    local isDefensive = HasEntityBeenDamagedByEntity(playerPed, ped, true)
-                                    local isOffensive = HasEntityBeenDamagedByEntity(ped, playerPed, true)
+                                    local threatTime = recentThreats[ped]
+                                    local isThreat = threatTime and (GetGameTimer() - threatTime) < THREAT_WINDOW
 
-                                    if (isDefensive or isOffensive) and dist < bestDist then
+                                    if isThreat and dist < bestDist then
                                         bestDist = dist
                                         bestTarget = ped
                                     end
@@ -346,7 +367,13 @@ local function startAggroThread()
                     ::nextAggro::
                 end
 
-                ClearEntityLastDamageEntity(playerPed)
+                -- Purge stale threats
+                local now = GetGameTimer()
+                for threatPed, ts in pairs(recentThreats) do
+                    if now - ts > THREAT_WINDOW or not DoesEntityExist(threatPed) then
+                        recentThreats[threatPed] = nil
+                    end
+                end
             end
 
             Wait(cfg.checkInterval)

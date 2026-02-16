@@ -50,9 +50,11 @@ function ActivePed:remove(hash)
     SetWaiting(hash, false)
     SetBusy(hash, false)
 
-    local netId = NetworkGetNetworkIdFromEntity(petData.entity)
-    if netId then
-        TriggerServerEvent('murderface-pets:server:deleteEntity', netId)
+    if DoesEntityExist(petData.entity) then
+        local netId = NetworkGetNetworkIdFromEntity(petData.entity)
+        if netId and netId ~= 0 then
+            TriggerServerEvent('murderface-pets:server:deleteEntity', netId)
+        end
     end
 
     self.pets[hash] = nil
