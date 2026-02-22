@@ -154,10 +154,16 @@ function CreateAPed(hash, pos)
     while not DoesEntityExist(ped) do
         Wait(10)
     end
+
     SetBlockingOfNonTemporaryEvents(ped, true)
     SetPedFleeAttributes(ped, 0, 0)
     SetPedRelationshipGroupHash(ped, petGroupHash)
     SetModelAsNoLongerNeeded(hash)
+
+    if Config.debug then
+        print(('[murderface-pets] ^3CreateAPed DONE^0: ped=%s exists=%s health=%s pos=%.1f,%.1f,%.1f'):format(
+            tostring(ped), tostring(DoesEntityExist(ped)), tostring(GetEntityHealth(ped)), pos.x, pos.y, pos.z))
+    end
     return ped
 end
 
@@ -594,8 +600,11 @@ function SearchLogic(_, activePed)
 
     ClearPedTasks(activePed.entity)
     local pedCoord = GetEntityCoords(PlayerPedId())
-    local closestPlayer = getClosestPlayer(pedCoord)
-    if closestPlayer == -1 then return end
+    local closestPlayer, closestDist = getClosestPlayer(pedCoord)
+    if closestPlayer == -1 or closestDist > 10.0 then
+        lib.notify({ description = 'No one nearby to search', type = 'error', duration = 5000 })
+        return
+    end
 
     local pedplayer = GetPlayerPed(closestPlayer)
     TaskGoToCoordAnyMeans(activePed.entity, GetEntityCoords(pedplayer), 10.0, 0, 0, 0, 0)
@@ -604,7 +613,9 @@ function SearchLogic(_, activePed)
     CreateThread(function()
         while not finished do
             Wait(5)
-            pedCoord = GetEntityCoords(GetPlayerPed(closestPlayer))
+            local targetPed = GetPlayerPed(closestPlayer)
+            if targetPed == 0 or not DoesEntityExist(targetPed) then break end
+            pedCoord = GetEntityCoords(targetPed)
             DrawMarker(2, pedCoord.x, pedCoord.y, pedCoord.z + 2, 0.0, 0.0, 0.0, 0.0, 180.0, 0.0, 1.0, 1.0, 1.0, 255, 128, 0, 50, false, true, 2, nil, nil, false)
         end
     end)

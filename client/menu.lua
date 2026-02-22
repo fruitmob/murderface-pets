@@ -463,14 +463,14 @@ function openSpecializationMenu(activePed)
                     activePed.item.metadata.hash, specKey)
                 if success then
                     activePed.item.metadata.specialization = result
-                    lib.notify({
+                    Config.notify({
                         title = 'Specialization Chosen!',
                         description = (activePed.item.metadata.name or 'Pet') .. ' is now a ' .. spec.label .. '!',
                         type = 'success',
                         duration = 10000,
                     })
                 else
-                    lib.notify({ description = result or 'Failed', type = 'error', duration = 5000 })
+                    Config.notify({ description = result or 'Failed', type = 'error', duration = 5000 })
                 end
             end,
         }
@@ -537,12 +537,12 @@ local function registerActionMenu()
                     if result == true then
                         if value.triggerNotification then
                             local msg = value.triggerNotification[1]:gsub('PETNAME', activePed.item.metadata.name)
-                            lib.notify({ description = msg, type = 'success', duration = 7000 })
+                            Config.notify({ description = msg, type = 'success', duration = 7000 })
                         end
                     else
                         if value.triggerNotification then
                             local msg = value.triggerNotification[2]:gsub('PETNAME', activePed.item.metadata.name)
-                            lib.notify({ description = msg, type = 'error', duration = 7000 })
+                            Config.notify({ description = msg, type = 'error', duration = 7000 })
                         end
                     end
                 end,

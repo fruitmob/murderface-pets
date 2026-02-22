@@ -237,7 +237,25 @@ function Pet:spawnPet(src, model, item)
     pendingSpawns[src] = pendingSpawns[src] or {}
     pendingSpawns[src][hash] = os.time()
 
-    local isOwner = item.metadata.owner and item.metadata.owner.phone == player.PlayerData.charinfo.phone
+    -- Self-heal: if owner metadata is missing or corrupt, claim for the current holder
+    local ownerData = item.metadata.owner
+    local charinfo = player.PlayerData.charinfo
+    if type(ownerData) ~= 'table' or not ownerData.phone then
+        print(('[murderface-pets] ^3Owner metadata missing/corrupt for hash=%s — auto-repairing to current holder^0'):format(hash))
+        item.metadata.owner = charinfo
+        exports.ox_inventory:SetMetadata(src, item.slot, item.metadata)
+        ownerData = charinfo
+    end
+
+    -- Ownership check: compare phone as string to avoid type mismatches
+    local isOwner = tostring(ownerData.phone) == tostring(charinfo.phone)
+    if Config.debug then
+        print(('[murderface-pets] ^3spawnPet ownership check^0: hash=%s isOwner=%s'):format(
+            tostring(hash), tostring(isOwner)))
+        print(('[murderface-pets]   owner.phone=%s (%s)  charinfo.phone=%s (%s)'):format(
+            tostring(ownerData.phone), type(ownerData.phone),
+            tostring(charinfo.phone), type(charinfo.phone)))
+    end
     TriggerClientEvent('murderface-pets:client:spawnPet', src, model, not isOwner, item)
 end
 
@@ -297,6 +315,8 @@ function Pet:saveData(src, hash, silent, processStats)
                 TriggerClientEvent('murderface-pets:client:syncStats', src, hash, {
                     food = petData.metadata.food,
                     thirst = petData.metadata.thirst,
+                    XP = petData.metadata.XP,
+                    level = petData.metadata.level,
                 })
             end
         else
@@ -387,8 +407,9 @@ RegisterNetEvent('murderface-pets:server:despawnNotOwned', function(hash)
 end)
 
 RegisterNetEvent('murderface-pets:server:deleteEntity', function(netId)
+    if not netId or netId == 0 then return end
     local entity = NetworkGetEntityFromNetworkId(netId)
-    if entity ~= 0 then
+    if entity and entity ~= 0 and DoesEntityExist(entity) then
         DeleteEntity(entity)
     end
 end)
@@ -1415,6 +1436,38 @@ lib.callback.register('murderface-pets:server:registerPet', function(source, dat
     return Pet:setAsSpawned(src, data)
 end)
 
+-- Create pet entity server-side so OneSync won't cull it
+lib.callback.register('murderface-pets:server:createPetEntity', function(source, data)
+    local src = source
+    local modelHash = type(data.model) == 'string' and joaat(data.model) or data.model
+    local pos = data.pos
+
+    local ped = CreatePed(5, modelHash, pos.x, pos.y, pos.z, 0.0, true, true)
+    if not ped or ped == 0 then
+        print(('[murderface-pets] ^1Failed to create server-side ped^0: model=%s'):format(tostring(data.model)))
+        return nil
+    end
+
+    -- Wait briefly for entity to initialize
+    local timeout = 0
+    while not DoesEntityExist(ped) and timeout < 50 do
+        Wait(10)
+        timeout = timeout + 1
+    end
+
+    if not DoesEntityExist(ped) then
+        print('[murderface-pets] ^1Server ped creation timed out^0')
+        return nil
+    end
+
+    local netId = NetworkGetNetworkIdFromEntity(ped)
+    if Config.debug then
+        print(('[murderface-pets] ^2Server-side ped created^0: ped=%s netId=%s model=%s'):format(
+            tostring(ped), tostring(netId), tostring(data.model)))
+    end
+    return netId
+end)
+
 -- Transfer ownership
 lib.callback.register('murderface-pets:server:transferOwnership', function(source, data)
     local src = source
@@ -1552,11 +1605,64 @@ lib.addCommand('petrestore', {
     })
 end)
 
+lib.addCommand('petdebug', {
+    help = 'Show server-side stats for your active pets (Admin)',
+    restricted = 'group.admin',
+}, function(source)
+    local src = source
+    if not Pet.players[src] then
+        TriggerClientEvent('ox_lib:notify', src, {
+            description = 'No active pets found.',
+            type = 'error'
+        })
+        return
+    end
+
+    local count = 0
+    for hash, petData in pairs(Pet.players[src]) do
+        count = count + 1
+        local md = petData.metadata
+        local petCfg = Config.petsByItem[petData.itemName]
+        local maxHP = petCfg and petCfg.maxHealth or '?'
+        print(('[murderface-pets] ^3petdebug^0 [%s] %s (%s): XP=%d Lv=%d HP=%s/%s Food=%.1f Thirst=%.1f Spec=%s Doghouse=%s Dirty=%s'):format(
+            hash,
+            md.name or '?',
+            petData.itemName or '?',
+            md.XP or 0,
+            md.level or 0,
+            tostring(md.health or 0),
+            tostring(maxHP),
+            md.food or 0,
+            md.thirst or 0,
+            tostring(md.specialization or 'none'),
+            tostring(petData.nearDoghouse or false),
+            tostring(petData.dirty or false)
+        ))
+        TriggerClientEvent('ox_lib:notify', src, {
+            description = string.format('[%s] %s — Lv%d XP:%d HP:%s Food:%.0f%% Thirst:%.0f%%',
+                hash:sub(1, 6), md.name or '?', md.level or 0, md.XP or 0,
+                tostring(md.health or 0), md.food or 0, md.thirst or 0),
+            type = 'inform',
+            duration = 15000,
+        })
+    end
+
+    if count == 0 then
+        TriggerClientEvent('ox_lib:notify', src, {
+            description = 'No active pets tracked server-side.',
+            type = 'error'
+        })
+    else
+        print(('[murderface-pets] ^3petdebug^0 Total active pets for src %d: %d'):format(src, count))
+    end
+end)
+
 -- ============================
 --   Startup Diagnostics
 -- ============================
 
 CreateThread(function()
+    if not Config.debug then return end
     Wait(5000) -- wait for ox_inventory to fully initialize
     print('[murderface-pets] ^3Running startup diagnostics...^0')
 

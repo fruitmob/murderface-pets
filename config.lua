@@ -3,7 +3,11 @@ Config = {}
 -- ========================================
 --  General Settings
 -- ========================================
-Config.debug = false
+Config.debug = true
+
+-- Notification routing: 'rtx_notify' uses TriggerEvent('rtx_notify:Notify', ...),
+-- 'ox_lib' uses lib.notify(). Set to 'ox_lib' for servers without rtx_notify.
+Config.notifySystem = 'rtx_notify'
 
 Config.maxActivePets = 2          -- max pets a player can have spawned at once
 Config.dataUpdateInterval = 10    -- seconds between server XP/food/thirst ticks
@@ -701,3 +705,44 @@ Config.suppliesShop = {
         { name = 'murderface_doghouse',   label = 'Dog House',             price = 5000 },
     },
 }
+
+-- ========================================
+--  Notification Helper (shared)
+-- ========================================
+-- Maps notification type names for rtx_notify compatibility.
+-- ox_lib uses: 'inform','success','error','warning'
+-- rtx_notify uses: 'info','success','error','warning'
+local rtxTypeMap = { inform = 'info', success = 'success', error = 'error', warning = 'warning', info = 'info' }
+
+--- Send a notification, routing through Config.notifySystem.
+--- Client-side: fires directly. Server-side: fires to target player.
+--- @param opts table { description, type, duration, title?, src? }
+---   opts.src is required when called server-side (player source id)
+function Config.notify(opts)
+    local desc = opts.description or ''
+    local nType = opts.type or 'info'
+    local dur = opts.duration or 5000
+    local title = opts.title or ''
+
+    if Config.notifySystem == 'rtx_notify' then
+        local mappedType = rtxTypeMap[nType] or 'info'
+        if IsDuplicityVersion() then
+            -- Server → Client
+            if opts.src then
+                TriggerClientEvent('rtx_notify:Notify', opts.src, title, desc, dur, mappedType)
+            end
+        else
+            -- Client-side
+            TriggerEvent('rtx_notify:Notify', title, desc, dur, mappedType)
+        end
+    else
+        -- Fallback: ox_lib notify
+        if IsDuplicityVersion() then
+            if opts.src then
+                TriggerClientEvent('ox_lib:notify', opts.src, { title = title ~= '' and title or nil, description = desc, type = nType, duration = dur })
+            end
+        else
+            lib.notify({ title = title ~= '' and title or nil, description = desc, type = nType, duration = dur })
+        end
+    end
+end

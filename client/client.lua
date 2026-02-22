@@ -11,7 +11,7 @@ ActivePed = {
 }
 
 --- Register a new spawned pet
-function ActivePed:add(model, hostile, item, ped, netId)
+function ActivePed:add(model, hostile, item, ped)
     local hash = item.metadata.hash
     local petCfg = Config.petsByItem[item.name]
 
@@ -19,7 +19,6 @@ function ActivePed:add(model, hostile, item, ped, netId)
         model      = model,
         modelString = petCfg and petCfg.model or model,
         entity     = ped,
-        netId      = netId,
         hostile    = hostile,
         item       = item,
         lastCoord  = GetEntityCoords(ped),
@@ -54,6 +53,8 @@ function ActivePed:remove(hash)
         local netId = NetworkGetNetworkIdFromEntity(petData.entity)
         if netId and netId ~= 0 then
             TriggerServerEvent('murderface-pets:server:deleteEntity', netId)
+        else
+            DeleteEntity(petData.entity)
         end
     end
 
@@ -153,6 +154,11 @@ end
 -- ============================
 
 RegisterNetEvent('murderface-pets:client:spawnPet', function(modelName, hostileTowardPlayer, item)
+    if Config.debug then
+        print(('[murderface-pets] ^3client:spawnPet received^0: model=%s hostile=%s hash=%s'):format(
+            tostring(modelName), tostring(hostileTowardPlayer),
+            tostring(item and item.metadata and item.metadata.hash)))
+    end
     local model = type(modelName) == 'string' and GetHashKey(modelName) or modelName
     local plyPed = PlayerPedId()
     SetCurrentPedWeapon(plyPed, 0xA2719263, true)
@@ -176,11 +182,64 @@ RegisterNetEvent('murderface-pets:client:spawnPet', function(modelName, hostileT
         ClearPedTasks(plyPed)
 
         local spawnCoord = getSpawnLocation(plyPed)
-        local ped = CreateAPed(model, spawnCoord)
-        local netId = NetworkGetNetworkIdFromEntity(ped)
 
-        -- Register on server
-        lib.callback.await('murderface-pets:server:registerPet', false, {
+        -- Create entity server-side so OneSync won't cull it
+        local netId = lib.callback.await('murderface-pets:server:createPetEntity', false, {
+            model = modelName, pos = spawnCoord
+        })
+
+        if not netId then
+            lib.notify({ description = 'Failed to spawn pet', type = 'error', duration = 5000 })
+            if item.metadata and item.metadata.hash then
+                TriggerServerEvent('murderface-pets:server:spawnCancelled', item.metadata.hash)
+            end
+            return
+        end
+
+        -- Resolve server entity to client handle
+        local timeout = 0
+        while not NetworkDoesNetworkIdExist(netId) and timeout < 100 do
+            Wait(10)
+            timeout = timeout + 1
+        end
+
+        local ped = NetToPed(netId)
+        timeout = 0
+        while (not ped or ped == 0 or not DoesEntityExist(ped)) and timeout < 100 do
+            Wait(10)
+            ped = NetToPed(netId)
+            timeout = timeout + 1
+        end
+
+        if not ped or ped == 0 or not DoesEntityExist(ped) then
+            lib.notify({ description = 'Failed to resolve pet entity', type = 'error', duration = 5000 })
+            if item.metadata and item.metadata.hash then
+                TriggerServerEvent('murderface-pets:server:spawnCancelled', item.metadata.hash)
+            end
+            return
+        end
+
+        -- Request control of the server-created entity
+        NetworkRequestControlOfEntity(ped)
+        timeout = 0
+        while not NetworkHasControlOfEntity(ped) and timeout < 100 do
+            Wait(10)
+            timeout = timeout + 1
+        end
+
+        if Config.debug then
+            print(('[murderface-pets] ^2Resolved server entity^0: netId=%s ped=%s exists=%s health=%s control=%s'):format(
+                tostring(netId), tostring(ped), tostring(DoesEntityExist(ped)),
+                tostring(GetEntityHealth(ped)), tostring(NetworkHasControlOfEntity(ped))))
+        end
+
+        -- Apply client-side ped properties
+        SetBlockingOfNonTemporaryEvents(ped, true)
+        SetPedFleeAttributes(ped, 0, 0)
+        SetPedRelationshipGroupHash(ped, GetHashKey('MFPETS_COMPANION'))
+
+        -- Register on server (non-blocking)
+        lib.callback('murderface-pets:server:registerPet', false, function() end, {
             item = item, model = modelName, entity = ped
         })
 
@@ -203,7 +262,7 @@ RegisterNetEvent('murderface-pets:client:spawnPet', function(modelName, hostileT
         end
 
         -- Init client data
-        ActivePed:add(modelName, hostileTowardPlayer, item, ped, netId)
+        ActivePed:add(modelName, hostileTowardPlayer, item, ped)
         local petData = ActivePed:findByHash(item.metadata.hash)
 
         -- Apply variation
@@ -358,6 +417,11 @@ RegisterNetEvent('murderface-pets:client:spawnPet', function(modelName, hostileT
 
         exports.ox_target:addLocalEntity(ped, targetOptions)
 
+        if Config.debug then
+            print(('[murderface-pets] ^3hostile check^0: hostile=%s health=%s entityExists=%s'):format(
+                tostring(petData.hostile), tostring(currentHealth), tostring(DoesEntityExist(ped))))
+        end
+
         if petData.hostile then
             TriggerServerEvent('murderface-pets:server:despawnNotOwned', petData.item.metadata.hash)
             return
@@ -365,6 +429,11 @@ RegisterNetEvent('murderface-pets:client:spawnPet', function(modelName, hostileT
 
         if currentHealth > 100 then
             createActivePetThread(ped, item)
+        else
+            if Config.debug then
+                print(('[murderface-pets] ^1Pet health <= 100, no active thread started^0: health=%s'):format(
+                    tostring(currentHealth)))
+            end
         end
     end
 end)
@@ -852,6 +921,8 @@ RegisterNetEvent('murderface-pets:client:syncStats', function(hash, stats)
     if not petData then return end
     if stats.food ~= nil then petData.item.metadata.food = stats.food end
     if stats.thirst ~= nil then petData.item.metadata.thirst = stats.thirst end
+    if stats.XP ~= nil then petData.item.metadata.XP = stats.XP end
+    if stats.level ~= nil then petData.item.metadata.level = stats.level end
 end)
 
 -- ============================
@@ -874,7 +945,7 @@ RegisterNetEvent('murderface-pets:client:milestone', function(hash, level, petNa
 
     -- Special notification
     local title = Config.getLevelTitle(level)
-    lib.notify({
+    Config.notify({
         title = 'Milestone Reached!',
         description = string.format('%s reached level %d — %s!', petName, level, title),
         type = 'success',
