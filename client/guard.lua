@@ -204,8 +204,7 @@ function StopGuard(hash)
         SetBlockingOfNonTemporaryEvents(activePed.entity, true)
         SetCanAttackFriendly(activePed.entity, false, false)
         SetPedRelationshipGroupHash(activePed.entity, petGroupHash)
-        ClearPedTasks(activePed.entity)
-        TaskFollowTargetedPlayer(activePed.entity, PlayerPedId(), 3.0, false)
+        TaskFollowTargetedPlayer(activePed.entity, PlayerPedId(), 1.5, true)
     end
 end
 

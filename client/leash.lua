@@ -239,7 +239,9 @@ function DetachLeash(hash)
     local petData = ActivePed:findByHash(hash)
     if petData and DoesEntityExist(petData.entity) then
         local netId = NetworkGetNetworkIdFromEntity(petData.entity)
-        TriggerServerEvent('murderface-pets:server:syncLeash', netId, false, nil)
+        if netId and netId ~= 0 then
+            TriggerServerEvent('murderface-pets:server:syncLeash', netId, false, nil)
+        end
     end
 end
 

@@ -1212,6 +1212,20 @@ RegisterNetEvent('qbx_core:client:onLogout', function()
     ActivePed:removeAll()
 end)
 
+-- Clean up all entities on resource restart (prevents ghost pets)
+AddEventHandler('onResourceStop', function(resource)
+    if resource ~= GetCurrentResourceName() then return end
+    DropCarriedPet()
+    DetachAllLeashes()
+    StopAllGuards()
+    StopAllAggro()
+    for hash, petData in pairs(ActivePed.pets) do
+        if DoesEntityExist(petData.entity) then
+            DeleteEntity(petData.entity)
+        end
+    end
+end)
+
 -- ============================
 --     Feeding
 -- ============================

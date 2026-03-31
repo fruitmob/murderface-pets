@@ -128,7 +128,10 @@ local menu = {
         action = function(_, activePed)
             doSomethingIfPedIsInsideVehicle(activePed.entity)
             SetWaiting(activePed.item.metadata.hash, true)
-            ClearPedTasks(activePed.entity)
+            -- Pet will naturally sit via idle phase — no ClearPedTasks stutter
+            if activePed.animClass and Anims.hasAction(activePed.animClass, 'sit') then
+                Anims.play(activePed.entity, activePed.animClass, 'sit')
+            end
         end
     },
     {
