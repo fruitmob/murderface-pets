@@ -2,6 +2,21 @@
 -- Hash-based ActivePed class, spawning, health tracking, AFK behavior, item events.
 
 -- ============================
+--   Forward-declared State Tables
+--   (must be above ActivePed so :remove() can reference them)
+-- ============================
+local followCooldowns = {}      -- { [hash] = gameTimer }
+local lastFollowSpeed = {}      -- { [hash] = speed }
+local petSlotIndex = {}         -- { [hash] = 1 or 2 } offset slot
+local idleTimers = {}           -- { [hash] = seconds stopped }
+local idleState = {}            -- { [hash] = 'following'|'idle_sit'|'idle_wander'|'idle_anim' }
+local lastVocalize = {}         -- { [hash] = gameTimer }
+local lastWaterReact = {}       -- { [hash] = gameTimer }
+local petWaterState = {}        -- { [hash] = bool }
+local reviveFlags = {}          -- { [hash] = bool }
+local wasPlayerSprinting = {}   -- { [hash] = bool }
+
+-- ============================
 --         Pet Class
 -- ============================
 
@@ -509,8 +524,6 @@ end)
 -- Resurrects the pet entity on the ground instead of despawning.
 -- Breaks the death loop by setting a revive flag the loop checks.
 
-local reviveFlags = {} -- { [hash] = true }
-
 RegisterNetEvent('murderface-pets:client:revivePet', function(hash, newHealth)
     local petData = ActivePed:findByHash(hash)
     if not petData then return end
@@ -561,10 +574,6 @@ end)
 -- react to the environment, vocalize, and match your pace.
 -- No menus or toggles needed for basic companion behavior.
 
-local followCooldowns = {}      -- { [hash] = gameTimer }
-local lastFollowSpeed = {}      -- { [hash] = speed } track to avoid re-issuing same task
-local petSlotIndex = {}         -- { [hash] = 1 or 2 } offset slot so multiple pets don't stack
-
 --- Get the X and Y offset for a pet so multiple pets don't share the same follow target.
 --- Pet 1 walks on the left-behind, Pet 2 on the right-behind.
 --- The Y offsets are staggered so GTA's navmesh treats them as different destinations.
@@ -582,15 +591,9 @@ local function getPetOffset(hash)
         return 1.5, -2.5   -- right side, slightly further back (staggered)
     end
 end
-local idleTimers = {}           -- { [hash] = seconds stopped }
-local idleState = {}            -- { [hash] = 'following'|'idle_sit'|'idle_wander'|'idle_anim' }
-local lastVocalize = {}         -- { [hash] = gameTimer }
 local lastNearbyPedBark = 0     -- global cooldown for barking at strangers
-local wasPlayerSprinting = {}   -- { [hash] = bool } per-pet sprint tracking
 local lastPetInteract = 0       -- cooldown for pet-to-pet interactions
 local lastStrangerScan = 0      -- throttle GetGamePool('CPed') scans
-local lastWaterReact = {}       -- { [hash] = gameTimer } water reaction cooldown
-local petWaterState = {}        -- { [hash] = bool } track if pet was in water
 
 --- Determine the right follow speed based on player state AND pet distance.
 ---@param plyPed number Player ped
