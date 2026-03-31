@@ -59,6 +59,7 @@ function ActivePed:remove(hash)
     lastWaterReact[hash] = nil
     petWaterState[hash] = nil
     reviveFlags[hash] = nil
+    wasPlayerSprinting[hash] = nil
 
     if DoesEntityExist(petData.entity) then
         local netId = NetworkGetNetworkIdFromEntity(petData.entity)
@@ -564,26 +565,30 @@ local followCooldowns = {}      -- { [hash] = gameTimer }
 local lastFollowSpeed = {}      -- { [hash] = speed } track to avoid re-issuing same task
 local petSlotIndex = {}         -- { [hash] = 1 or 2 } offset slot so multiple pets don't stack
 
---- Get the X offset for a pet so multiple pets walk side by side
---- Pet 1 walks on the left (-1.2), Pet 2 on the right (+1.2)
+--- Get the X and Y offset for a pet so multiple pets don't share the same follow target.
+--- Pet 1 walks on the left-behind, Pet 2 on the right-behind.
+--- The Y offsets are staggered so GTA's navmesh treats them as different destinations.
 ---@param hash string Pet hash
----@return number xOffset
-local function getPetLateralOffset(hash)
+---@return number xOffset, number yBehindOffset
+local function getPetOffset(hash)
     if not petSlotIndex[hash] then
-        -- Assign next available slot
         local used = {}
         for _, slot in pairs(petSlotIndex) do used[slot] = true end
         petSlotIndex[hash] = used[1] and 2 or 1
     end
-    -- Slot 1 = left side, Slot 2 = right side
-    return petSlotIndex[hash] == 1 and -1.2 or 1.2
+    if petSlotIndex[hash] == 1 then
+        return -1.5, -1.5  -- left side, directly behind
+    else
+        return 1.5, -2.5   -- right side, slightly further back (staggered)
+    end
 end
 local idleTimers = {}           -- { [hash] = seconds stopped }
 local idleState = {}            -- { [hash] = 'following'|'idle_sit'|'idle_wander'|'idle_anim' }
 local lastVocalize = {}         -- { [hash] = gameTimer }
 local lastNearbyPedBark = 0     -- global cooldown for barking at strangers
-local wasPlayerSprinting = false
+local wasPlayerSprinting = {}   -- { [hash] = bool } per-pet sprint tracking
 local lastPetInteract = 0       -- cooldown for pet-to-pet interactions
+local lastStrangerScan = 0      -- throttle GetGamePool('CPed') scans
 local lastWaterReact = {}       -- { [hash] = gameTimer } water reaction cooldown
 local petWaterState = {}        -- { [hash] = bool } track if pet was in water
 
@@ -668,12 +673,13 @@ local function ambientBehavior(ped, plyPed, hash, animClass, petConfig)
     -- ---- Sprint excitement: pet barks happily when owner sprints ----
     if cfg.sprintExcitement and not IsWaiting(hash) then
         local sprinting = IsPedSprinting(plyPed)
-        if sprinting and not wasPlayerSprinting then
+        if sprinting and not wasPlayerSprinting[hash] then
             if animClass and math.random() < 0.4 then
                 SetAnimalMood(ped, 1) -- playful
                 PlayAnimalVocalization(ped, 3, 'bark')
             end
         end
+        wasPlayerSprinting[hash] = sprinting
     end
 
     -- ---- Random ambient vocalizations while moving ----
@@ -687,7 +693,9 @@ local function ambientBehavior(ped, plyPed, hash, animClass, petConfig)
     end
 
     -- ---- Bark at strangers who approach ----
-    if cfg.reactToNearbyPeds and now - lastNearbyPedBark > cfg.nearbyPedCooldown then
+    -- Throttle GetGamePool scans to every 5 seconds (expensive call)
+    if cfg.reactToNearbyPeds and now - lastNearbyPedBark > cfg.nearbyPedCooldown and now - lastStrangerScan > 5000 then
+        lastStrangerScan = now
         local petPos = GetEntityCoords(ped)
         local pedPool = GetGamePool('CPed')
         for _, nearPed in ipairs(pedPool) do
@@ -699,9 +707,7 @@ local function ambientBehavior(ped, plyPed, hash, animClass, petConfig)
                     SetAnimalMood(ped, 0) -- alert
                     PlayAnimalVocalization(ped, 3, 'bark')
                     lastNearbyPedBark = now
-                    -- Look at the stranger
                     makeEntityFaceEntity(ped, nearPed)
-                    Wait(0) -- yield so face takes effect
                     break
                 end
             end
@@ -716,7 +722,7 @@ local function ambientBehavior(ped, plyPed, hash, animClass, petConfig)
         local state = idleState[hash] or 'following'
 
         -- Phase 1: After threshold seconds, pet sits down
-        if idleSecs == cfg.idleThreshold and state == 'following' then
+        if idleSecs >= cfg.idleThreshold and state == 'following' then
             if animClass and Anims.hasAction(animClass, 'sit') then
                 ClearPedTasks(ped)
                 Anims.play(ped, animClass, 'sit')
@@ -725,7 +731,7 @@ local function ambientBehavior(ped, plyPed, hash, animClass, petConfig)
 
         -- Phase 2: After wanderInterval, pet gets up and sniffs around
         -- If owner has another pet, go interact with them instead of random wandering
-        elseif idleSecs == Config.balance.afk.wanderInterval and state == 'idle_sit' then
+        elseif idleSecs >= Config.balance.afk.wanderInterval and state == 'idle_sit' then
             ClearPedTasks(ped)
             local didSibling = false
 
@@ -734,16 +740,20 @@ local function ambientBehavior(ped, plyPed, hash, animClass, petConfig)
                 if sibHash ~= hash and DoesEntityExist(sibData.entity) and not IsEntityDead(sibData.entity) then
                     local sibDist = #(GetEntityCoords(ped) - GetEntityCoords(sibData.entity))
                     if sibDist < 10.0 then
-                        -- Walk over to sibling and interact
-                        makeEntityFaceEntity(ped, sibData.entity)
-                        TaskGoToEntity(ped, sibData.entity, -1, 0.8, 2.0, 0, 0)
-                        SetAnimalMood(ped, 1) -- playful
-                        Wait(1500)
-                        if DoesEntityExist(ped) and DoesEntityExist(sibData.entity) then
-                            PlayAnimalVocalization(ped, 3, 'bark')
-                            Wait(600)
-                            PlayAnimalVocalization(sibData.entity, 3, 'bark')
-                        end
+                        -- Walk over to sibling (non-blocking — CreateThread so pet loop continues)
+                        local capPed, capSib = ped, sibData.entity
+                        CreateThread(function()
+                            if not DoesEntityExist(capPed) or not DoesEntityExist(capSib) then return end
+                            makeEntityFaceEntity(capPed, capSib)
+                            TaskGoToEntity(capPed, capSib, -1, 0.8, 2.0, 0, 0)
+                            SetAnimalMood(capPed, 1)
+                            Wait(1500)
+                            if DoesEntityExist(capPed) and DoesEntityExist(capSib) then
+                                PlayAnimalVocalization(capPed, 3, 'bark')
+                                Wait(600)
+                                PlayAnimalVocalization(capSib, 3, 'bark')
+                            end
+                        end)
                         didSibling = true
                         break
                     end
@@ -761,7 +771,7 @@ local function ambientBehavior(ped, plyPed, hash, animClass, petConfig)
             end
 
         -- Phase 3: After animInterval, play a random idle anim (sleep, bark, etc)
-        elseif idleSecs == Config.balance.afk.animInterval and state == 'idle_wander' then
+        elseif idleSecs >= Config.balance.afk.animInterval and state == 'idle_wander' then
             ClearPedTasks(ped)
             -- Pick a random idle action
             local idleAnims = { 'sit', 'sleep', 'bark' }
@@ -800,27 +810,28 @@ local function ambientBehavior(ped, plyPed, hash, animClass, petConfig)
                 if dist < 6.0 and math.random() < 0.3 then
                     lastPetInteract = now
 
-                    -- Pick a random social behavior
-                    local roll = math.random(3)
-                    if roll == 1 then
-                        -- Sniff: walk up to the other pet
-                        makeEntityFaceEntity(ped, nearPed)
-                        TaskGoToEntity(ped, nearPed, -1, 1.0, 2.0, 0, 0)
-                        SetAnimalMood(ped, 1) -- playful
-                        Wait(2000)
-                        PlayAnimalVocalization(ped, 3, 'bark')
-                    elseif roll == 2 then
-                        -- Playful bark exchange
-                        makeEntityFaceEntity(ped, nearPed)
-                        PlayAnimalVocalization(ped, 3, 'bark')
-                        Wait(800)
-                        PlayAnimalVocalization(nearPed, 3, 'bark')
-                    else
-                        -- Both sit near each other
-                        if animClass and Anims.hasAction(animClass, 'bark') then
-                            Anims.play(ped, animClass, 'bark')
+                    -- Non-blocking social interaction
+                    local capPed, capNear, capAnim = ped, nearPed, animClass
+                    CreateThread(function()
+                        if not DoesEntityExist(capPed) or not DoesEntityExist(capNear) then return end
+                        local roll = math.random(3)
+                        if roll == 1 then
+                            makeEntityFaceEntity(capPed, capNear)
+                            TaskGoToEntity(capPed, capNear, -1, 1.0, 2.0, 0, 0)
+                            SetAnimalMood(capPed, 1)
+                            Wait(2000)
+                            if DoesEntityExist(capPed) then PlayAnimalVocalization(capPed, 3, 'bark') end
+                        elseif roll == 2 then
+                            makeEntityFaceEntity(capPed, capNear)
+                            PlayAnimalVocalization(capPed, 3, 'bark')
+                            Wait(800)
+                            if DoesEntityExist(capNear) then PlayAnimalVocalization(capNear, 3, 'bark') end
+                        else
+                            if capAnim and Anims.hasAction(capAnim, 'bark') then
+                                Anims.play(capPed, capAnim, 'bark')
+                            end
                         end
-                    end
+                    end)
                     break
                 end
             end
@@ -882,7 +893,7 @@ local function smartFollow(ped, plyPed, hash)
 
     -- Teleport failsafe: pet is extremely far — warp close and immediately run
     if dist > 50.0 then
-        local offsetX = getPetLateralOffset(hash)
+        local offsetX, _ = getPetOffset(hash)
         local behindPos = GetOffsetFromEntityInWorldCoords(plyPed, offsetX, -3.0, 0.0)
         local found, groundZ = GetGroundZFor_3dCoord(behindPos.x, behindPos.y, behindPos.z + 2.0, false)
         if found then behindPos = vector3(behindPos.x, behindPos.y, groundZ) end
@@ -902,14 +913,14 @@ local function smartFollow(ped, plyPed, hash)
     local desiredSpeed = getContextualSpeed(plyPed, level, dist)
     local currentSpeed = lastFollowSpeed[hash] or -1
 
-    -- Lateral offset so multiple pets don't stack on top of each other
-    local offsetX = getPetLateralOffset(hash)
+    -- Per-pet offset so multiple pets don't share the same follow target
+    local offsetX, baseOffsetY = getPetOffset(hash)
 
     -- Determine follow offset: behind normally, AHEAD when sprinting
     local sprinting = IsPedSprinting(plyPed)
-    local offsetY = -1.5 -- behind player
+    local offsetY = baseOffsetY -- each pet has its own Y offset (staggered)
     if sprinting and Config.progression.sprintAhead and dist < 8.0 then
-        offsetY = 2.5 -- ahead of player (dog runs in front)
+        offsetY = 2.5 + (petSlotIndex[hash] == 2 and 1.0 or 0.0) -- stagger ahead too
     end
 
     -- Only re-issue follow when speed tier changes significantly or offset flipped
@@ -970,6 +981,8 @@ AddEventHandler('gameEventTriggered', function(eventName, args)
             local capturedAttacker = attacker
             local capturedHash = hash
             SetBusy(capturedHash, true)
+            idleTimers[capturedHash] = 0      -- reset idle so pet doesn't re-sit after combat
+            idleState[capturedHash] = 'following'
             CreateThread(function()
                 AttackTargetedPed(capturedPed, capturedAttacker)
                 SetBusy(capturedHash, false)
@@ -1062,9 +1075,6 @@ function createActivePetThread(ped, item)
 
             -- Smart following (speed-matches player movement)
             smartFollow(ped, plyPed, hash)
-
-            -- Track sprint state for excitement reactions
-            wasPlayerSprinting = IsPedSprinting(plyPed)
 
             -- Update server every N seconds
             if tmpcount >= count then
