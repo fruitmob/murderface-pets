@@ -1,9 +1,12 @@
 fx_version 'cerulean'
 games { 'gta5' }
-name 'murderface-pets'
-author 'FMRP Development Team'
-description 'Pet companion system for FMRP'
-version '1.2.0'
+
+name         'murderface-pets'
+author       'Murderface (FMRP)'
+version      '1.2.0'
+license      'MIT'
+repository   'https://github.com/fruitmob/murderface-pets'
+description  'Pet companion system for FiveM — 26 breeds, XP progression, AI behaviors, leash, K9, hunting. Qbox/ox stack.'
 
 shared_scripts {
     '@ox_lib/init.lua',

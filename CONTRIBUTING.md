@@ -1,6 +1,6 @@
 # Contributing to murderface-pets
 
-Thanks for your interest in contributing! This project is open source under GPL-3.0 and welcomes bug reports, feature ideas, and pull requests.
+Thanks for your interest in contributing! This project is open source under MIT and welcomes bug reports, feature ideas, and pull requests.
 
 ## Reporting Bugs
 

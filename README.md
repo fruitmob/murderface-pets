@@ -1,5 +1,9 @@
 # murderface-pets
 
+[![License](https://img.shields.io/github/license/fruitmob/murderface-pets)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/fruitmob/murderface-pets)](https://github.com/fruitmob/murderface-pets/releases)
+[![GitHub Stars](https://img.shields.io/github/stars/fruitmob/murderface-pets)](https://github.com/fruitmob/murderface-pets)
+
 A natural companion pet system for FiveM (QBox/QBX framework). Pets act like real pets — they follow you, defend you, react to their environment, and interact with other pets, all without constant menu management.
 
 ## Features
@@ -143,4 +147,4 @@ All settings are in `config.lua`:
 
 ## License
 
-MIT
+[MIT](LICENSE)
